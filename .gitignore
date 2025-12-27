@@ -37,3 +37,5 @@ deploy.sh
 
 # animation exports
 blog-animation/
+# Personal documentation (local only)
+Documentation/

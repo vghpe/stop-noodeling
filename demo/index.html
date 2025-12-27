@@ -42,13 +42,11 @@
             font-size: 0.85rem;
             z-index: 10000;
             font-weight: 500;
-            transition: opacity 0.3s, visibility 0.3s;
+            display: none;
         }
         
-        body.study-mode .demo-banner,
-        #review-screen:not(.hidden) ~ .demo-banner {
-            opacity: 0;
-            visibility: hidden;
+        #start-screen:not(.hidden) ~ .demo-banner {
+            display: block;
         }
         
         /* Start Screen */
@@ -510,7 +508,7 @@
 </head>
 <body>
     <div class="demo-banner">
-        This live demo only serves 10 images that are free for personal and commercial use. This tool is designed to use your own local library.
+        This demo only serves 10 images. The tool is designed to use your own local library.
     </div>
     
     <!-- Start Screen -->

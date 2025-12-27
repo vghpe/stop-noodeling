@@ -42,10 +42,6 @@ export STOP_NOODLING_LIBRARY_PATH="/path/to/library"
 python3 server.py
 ```
 
-## How It Works
-
-When you favorite an image, the server adds `"study-favorite"` to the image's `metadata.json` tags array. If you sync your Eagle library (e.g., with Syncthing), favorites appear in Eagle automatically.
-
 ## License
 
 MIT

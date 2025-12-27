@@ -55,7 +55,7 @@
             align-items: center;
             justify-content: flex-start;
             min-height: 100vh;
-            padding: 60px 20px 30px 20px;
+            padding: 70px 20px 30px 20px;
             overflow-y: auto;
         }
         
@@ -314,7 +314,7 @@
         /* Review Screen */
         #review-screen {
             display: none;
-            padding: 50px 20px 20px 20px;
+            padding: 20px 20px 100px 20px;
             min-height: 100vh;
             overflow-y: auto;
             position: fixed;
@@ -322,6 +322,7 @@
             left: 0;
             right: 0;
             bottom: 0;
+            background: #282C2F;
         }
         
         #review-screen h2 {
@@ -489,7 +490,7 @@
             }
             
             #review-screen {
-                padding: 50px 20px 80px 20px;
+                padding: 20px 20px 120px 20px;
             }
             
             #thumbnail-grid {
@@ -972,8 +973,12 @@
         }
         
         function showScreen(name) {
-            Object.values(screens).forEach(screen => screen.style.display = 'none');
+            Object.values(screens).forEach(screen => {
+                screen.style.display = 'none';
+                screen.classList.add('hidden');
+            });
             screens[name].style.display = name === 'start' ? 'flex' : 'block';
+            screens[name].classList.remove('hidden');
             
             // Toggle demo banner visibility
             const demoBanner = document.querySelector('.demo-banner');

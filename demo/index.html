@@ -42,11 +42,10 @@
             font-size: 0.85rem;
             z-index: 10000;
             font-weight: 500;
-            display: none;
         }
         
-        #start-screen:not(.hidden) ~ .demo-banner {
-            display: block;
+        body.study-mode .demo-banner {
+            display: none;
         }
         
         /* Start Screen */
@@ -975,6 +974,12 @@
         function showScreen(name) {
             Object.values(screens).forEach(screen => screen.style.display = 'none');
             screens[name].style.display = name === 'start' ? 'flex' : 'block';
+            
+            // Toggle demo banner visibility
+            const demoBanner = document.querySelector('.demo-banner');
+            if (demoBanner) {
+                demoBanner.style.display = name === 'start' ? 'block' : 'none';
+            }
         }
     </script>
 </body>

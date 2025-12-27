@@ -1,0 +1,983 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-fullscreen">
+    <meta name="apple-mobile-web-app-title" content="Stop Noodling">
+    <link rel="manifest" href="manifest.json">
+    <title>Stop Noodling - Demo</title>
+    <script src="https://unpkg.com/@panzoom/panzoom@4.5.1/dist/panzoom.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #282C2F;
+            color: #EAE6D3;
+            overflow: auto;
+            touch-action: auto;
+        }
+        
+        body.study-mode {
+            overflow: hidden;
+            touch-action: none;
+        }
+        
+        /* Demo Banner */
+        .demo-banner {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            background: #E09185;
+            color: white;
+            padding: 8px 16px;
+            text-align: center;
+            font-size: 0.85rem;
+            z-index: 10000;
+            font-weight: 500;
+            transition: opacity 0.3s, visibility 0.3s;
+        }
+        
+        body.study-mode .demo-banner,
+        #review-screen:not(.hidden) ~ .demo-banner {
+            opacity: 0;
+            visibility: hidden;
+        }
+        
+        /* Start Screen */
+        #start-screen {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-start;
+            min-height: 100vh;
+            padding: 60px 20px 30px 20px;
+            overflow-y: auto;
+        }
+        
+        #start-screen h1 {
+            font-size: 2.5rem;
+            margin-bottom: 0.4em;
+            font-weight: 300;
+        }
+        
+        #start-screen .subtitle {
+            font-size: 1rem;
+            color: #9A9388;
+            margin-bottom: 0;
+            font-weight: 400;
+            font-style: italic;
+        }
+        
+        .title-wrapper {
+            margin-bottom: 2rem;
+        }
+        
+        .settings-group {
+            margin-bottom: 1.5rem;
+            width: 100%;
+            max-width: 500px;
+        }
+        
+        .settings-group label {
+            display: block;
+            margin-bottom: 0.4rem;
+            font-size: 0.85rem;
+            color: #9A9388;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        .button-group {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        
+        .button-group button {
+            flex: 1;
+            min-width: 80px;
+            padding: 0.8rem;
+            font-size: 1.1rem;
+            background: #3a3d3f;
+            color: #EAE6D3;
+            border: 2px solid #5F544C;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .button-group button:active,
+        .button-group button.selected {
+            background: #4998AE;
+            border-color: #4998AE;
+            transform: scale(0.98);
+        }
+        
+        .button-group button:disabled,
+        .button-group button.disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+            pointer-events: none;
+        }
+        
+        input[type="number"] {
+            width: 100%;
+            padding: 1rem;
+            font-size: 1.1rem;
+            background: #3a3d3f;
+            color: #EAE6D3;
+            border: 2px solid #5F544C;
+            border-radius: 8px;
+            margin-top: 0.5rem;
+        }
+        
+        #start-button {
+            margin-top: 1.5rem;
+            padding: 1rem 2.5rem;
+            font-size: 1.2rem;
+            background: #4998AE;
+            color: #EAE6D3;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.2s;
+        }
+        
+        #start-button:active {
+            transform: scale(0.98);
+            background: #3a7a8a;
+        }
+        
+        /* Study Mode */
+        #study-screen {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: #000;
+        }
+        
+        #timer-bar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            height: 4px;
+            background: #4998AE;
+            width: 100%;
+            z-index: 1000;
+            transition: width 0.1s linear;
+        }
+        
+        #image-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0 120px 0 20px;
+        }
+        
+        #current-image {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        
+        #study-controls {
+            position: fixed;
+            top: 30px;
+            right: 0;
+            bottom: 0;
+            width: 100px;
+            background: rgba(40, 44, 47, 0.95);
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 20px;
+            z-index: 100;
+            transition: transform 0.3s;
+        }
+        
+        #study-controls.hidden {
+            transform: translateX(100%);
+        }
+        
+        #radial-timer {
+            position: relative;
+            width: 80px;
+            height: 80px;
+        }
+        
+        #radial-timer svg {
+            transform: rotate(-90deg);
+        }
+        
+        #radial-timer .timer-bg {
+            fill: none;
+            stroke: #3a3d3f;
+            stroke-width: 6;
+        }
+        
+        #radial-timer .timer-progress {
+            fill: none;
+            stroke: #4998AE;
+            stroke-width: 6;
+            stroke-linecap: round;
+            transition: stroke-dashoffset 0.1s linear;
+        }
+        
+        #radial-timer .timer-text {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 0.9rem;
+            color: #9A9388;
+            font-weight: 500;
+        }
+        
+        #image-counter {
+            font-size: 0.9rem;
+            color: #9A9388;
+            text-align: center;
+        }
+        
+        .control-buttons {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            width: 100%;
+        }
+        
+        .control-buttons button {
+            width: 60px;
+            height: 60px;
+            padding: 0;
+            font-size: 1.8rem;
+            background: #3a3d3f;
+            color: #EAE6D3;
+            border: 2px solid #5F544C;
+            border-radius: 8px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .control-buttons button:active {
+            transform: scale(0.95);
+        }
+        
+        #fullscreen-toggle-button {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            width: 60px;
+            height: 60px;
+            background: rgba(40, 44, 47, 0.8);
+            border: 2px solid #5F544C;
+            border-radius: 50%;
+            cursor: pointer;
+            font-size: 1.8rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 100;
+            transition: all 0.3s;
+            color: #EAE6D3;
+        }
+        
+        #fullscreen-toggle-button.hidden {
+            transform: translateY(100px);
+            opacity: 0;
+        }
+        
+        #fullscreen-toggle-button:active {
+            transform: scale(0.9);
+        }
+        
+        /* Review Screen */
+        #review-screen {
+            display: none;
+            padding: 50px 20px 20px 20px;
+            min-height: 100vh;
+            overflow-y: auto;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+        }
+        
+        #review-screen h2 {
+            text-align: center;
+            margin-bottom: 2rem;
+            font-weight: 300;
+        }
+        
+        #thumbnail-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+            gap: 15px;
+            margin-bottom: 2rem;
+        }
+        
+        .thumbnail-item {
+            position: relative;
+            aspect-ratio: 1;
+            cursor: pointer;
+            border-radius: 8px;
+            overflow: hidden;
+            background: #3a3d3f;
+        }
+        
+        .thumbnail-item img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        
+        #new-session-button {
+            display: block;
+            margin: 0 auto;
+            padding: 1.2rem 3rem;
+            font-size: 1.3rem;
+            background: #4998AE;
+            color: #EAE6D3;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+        }
+        
+        /* Fullscreen Review */
+        #fullscreen-review {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: #000;
+            z-index: 2000;
+            overflow: hidden;
+        }
+        
+        #fullscreen-review img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            padding: 60px 20px;
+            cursor: grab;
+        }
+        
+        #fullscreen-review img:active {
+            cursor: grabbing;
+        }
+        
+        #back-button {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            padding: 0.8rem 1.5rem;
+            background: rgba(40, 44, 47, 0.8);
+            color: #EAE6D3;
+            border: 2px solid #5F544C;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1rem;
+            z-index: 2001;
+        }
+        
+        #fullscreen-review-toggle {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            width: 60px;
+            height: 60px;
+            background: rgba(40, 44, 47, 0.8);
+            border: 2px solid #5F544C;
+            border-radius: 50%;
+            cursor: pointer;
+            font-size: 1.8rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 2001;
+            color: #EAE6D3;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 2rem;
+            font-size: 1.2rem;
+            color: #9A9388;
+        }
+        
+        .hidden {
+            display: none !important;
+        }
+        
+        /* Phone layout: Bottom navigation */
+        @media (max-width: 600px) {
+            #image-container {
+                padding: 20px 20px 120px 20px;
+            }
+            
+            #study-controls {
+                top: auto;
+                bottom: 0;
+                right: 0;
+                left: 0;
+                width: 100%;
+                height: auto;
+                flex-direction: row;
+                justify-content: space-around;
+                padding: 15px;
+            }
+            
+            #study-controls.hidden {
+                transform: translateY(100%);
+            }
+            
+            #radial-timer {
+                order: 1;
+            }
+            
+            #image-counter {
+                order: 0;
+                font-size: 0.8rem;
+            }
+            
+            .control-buttons {
+                order: 2;
+                flex-direction: row;
+                gap: 10px;
+            }
+            
+            .control-buttons button {
+                width: 50px;
+                height: 50px;
+                font-size: 1.5rem;
+            }
+            
+            #fullscreen-toggle-button {
+                bottom: 80px;
+                right: 15px;
+                width: 50px;
+                height: 50px;
+                font-size: 1.5rem;
+            }
+            
+            #start-screen h1 {
+                font-size: 2rem;
+            }
+            
+            #review-screen {
+                padding: 50px 20px 80px 20px;
+            }
+            
+            #thumbnail-grid {
+                grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+                gap: 10px;
+            }
+            
+            /* Hide fullscreen buttons on phones - already fullscreen */
+            #fullscreen-toggle-button,
+            #fullscreen-review-toggle {
+                display: none;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="demo-banner">
+        This live demo only serves 10 images that are free for personal and commercial use. This tool is designed to use your own local library.
+    </div>
+    
+    <!-- Start Screen -->
+    <div id="start-screen">
+        <div class="title-wrapper">
+            <h1>Stop Noodling</h1>
+            <p class="subtitle">don't be precious and practice lots</p>
+        </div>
+        
+        <div class="settings-group">
+            <label>Timer Duration</label>
+            <div class="button-group">
+                <button data-duration="30">30s</button>
+                <button data-duration="60" class="selected">1 min</button>
+                <button data-duration="120">2 min</button>
+                <button data-duration="300">5 min</button>
+            </div>
+            <input type="number" id="custom-duration" placeholder="Custom (seconds)" min="10" max="3600">
+        </div>
+        
+        <div class="settings-group">
+            <label>Number of Images</label>
+            <div class="button-group">
+                <button data-count="10" class="selected">10</button>
+                <button data-count="20" disabled class="disabled">20</button>
+                <button data-count="30" disabled class="disabled">30</button>
+            </div>
+        </div>
+        
+        <div class="settings-group">
+            <label>Practice Type</label>
+            <div class="button-group">
+                <button data-practice="figure" class="selected">Figure</button>
+                <button data-practice="hands" disabled class="disabled">Hands</button>
+                <button data-practice="portraits" disabled class="disabled">Portraits</button>
+            </div>
+        </div>
+        
+        <div class="settings-group">
+            <label>Start in Full Screen</label>
+            <div class="button-group">
+                <button data-fullscreen="true" class="selected">On</button>
+                <button data-fullscreen="false">Off</button>
+            </div>
+        </div>
+        
+        <button id="start-button">Start Session</button>
+    </div>
+    
+    <!-- Study Screen -->
+    <div id="study-screen">
+        <div id="timer-bar"></div>
+        <div id="image-container">
+            <img id="current-image" alt="Reference image">
+        </div>
+        <div id="study-controls">
+            <div id="radial-timer">
+                <svg width="80" height="80">
+                    <circle class="timer-bg" cx="40" cy="40" r="34"></circle>
+                    <circle class="timer-progress" cx="40" cy="40" r="34" id="timer-circle"></circle>
+                </svg>
+                <div class="timer-text" id="timer-text">1:00</div>
+            </div>
+            <div id="image-counter">1 / 10</div>
+            <div class="control-buttons">
+                <button id="pause-button" title="Pause"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg></button>
+                <button id="play-button" title="Play" style="display: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg></button>
+                <button id="skip-button" title="Skip"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 4 13 12 5 20 5 4"></polygon><polygon points="13 4 21 12 13 20 13 4"></polygon></svg></button>
+                <button id="end-button" title="End"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12"></rect></svg></button>
+            </div>
+        </div>
+        <button id="fullscreen-toggle-button" title="Toggle Fullscreen"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path></svg></button>
+    </div>
+    
+    <!-- Review Screen -->
+    <div id="review-screen">
+        <h2>Session Complete</h2>
+        <div id="thumbnail-grid"></div>
+        <button id="new-session-button">New Session</button>
+    </div>
+    
+    <!-- Fullscreen Review -->
+    <div id="fullscreen-review">
+        <button id="back-button"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg> Back</button>
+        <button id="fullscreen-review-toggle" title="Toggle Fullscreen"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path></svg></button>
+        <img id="fullscreen-image" alt="Review image">
+    </div>
+
+    <script>
+        // DEMO VERSION - Hardcoded images
+        const DEMO_IMAGES = [
+            { image_path: 'images/image1.webp', name: 'Figure 1', folder: 'demo1' },
+            { image_path: 'images/image2.webp', name: 'Figure 2', folder: 'demo2' },
+            { image_path: 'images/image3.webp', name: 'Figure 3', folder: 'demo3' },
+            { image_path: 'images/image4.webp', name: 'Figure 4', folder: 'demo4' },
+            { image_path: 'images/image5.webp', name: 'Figure 5', folder: 'demo5' },
+            { image_path: 'images/image6.webp', name: 'Figure 6', folder: 'demo6' },
+            { image_path: 'images/image7.webp', name: 'Figure 7', folder: 'demo7' },
+            { image_path: 'images/image8.webp', name: 'Figure 8', folder: 'demo8' },
+            { image_path: 'images/image9.webp', name: 'Figure 9', folder: 'demo9' },
+            { image_path: 'images/image10.webp', name: 'Figure 10', folder: 'demo10' }
+        ];
+        
+        // Application State
+        const state = {
+            duration: 60,
+            count: 10,
+            practiceType: 'figure',
+            useFullscreen: true,
+            images: [],
+            currentIndex: 0,
+            isPaused: false,
+            startTime: null,
+            pausedTime: 0,
+            timerInterval: null,
+            controlsVisible: true,
+            reviewIndex: null
+        };
+        
+        // DOM Elements
+        const screens = {
+            start: document.getElementById('start-screen'),
+            study: document.getElementById('study-screen'),
+            review: document.getElementById('review-screen'),
+            fullscreen: document.getElementById('fullscreen-review')
+        };
+        
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            setupStartScreen();
+            setupStudyScreen();
+            setupReviewScreen();
+        });
+        
+        function setupStartScreen() {
+            // Duration selection
+            document.querySelectorAll('[data-duration]').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    document.querySelectorAll('[data-duration]').forEach(b => b.classList.remove('selected'));
+                    btn.classList.add('selected');
+                    state.duration = parseInt(btn.dataset.duration);
+                    document.getElementById('custom-duration').value = '';
+                });
+            });
+            
+            document.getElementById('custom-duration').addEventListener('input', (e) => {
+                if (e.target.value) {
+                    document.querySelectorAll('[data-duration]').forEach(b => b.classList.remove('selected'));
+                    state.duration = parseInt(e.target.value) || 60;
+                }
+            });
+            
+            // Count selection - locked to 10 in demo
+            document.querySelectorAll('[data-count]').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    if (!btn.disabled) {
+                        document.querySelectorAll('[data-count]').forEach(b => b.classList.remove('selected'));
+                        btn.classList.add('selected');
+                        state.count = parseInt(btn.dataset.count);
+                    }
+                });
+            });
+            
+            // Practice type selection - locked to figure in demo
+            document.querySelectorAll('[data-practice]').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    if (!btn.disabled) {
+                        document.querySelectorAll('[data-practice]').forEach(b => b.classList.remove('selected'));
+                        btn.classList.add('selected');
+                        state.practiceType = btn.dataset.practice;
+                    }
+                });
+            });
+            
+            // Fullscreen selection
+            document.querySelectorAll('[data-fullscreen]').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    document.querySelectorAll('[data-fullscreen]').forEach(b => b.classList.remove('selected'));
+                    btn.classList.add('selected');
+                    state.useFullscreen = btn.dataset.fullscreen === 'true';
+                });
+            });
+            
+            // Start button
+            document.getElementById('start-button').addEventListener('click', startSession);
+        }
+        
+        function enterFullscreen() {
+            const elem = document.documentElement;
+            if (elem.requestFullscreen) {
+                elem.requestFullscreen();
+            } else if (elem.webkitRequestFullscreen) {
+                elem.webkitRequestFullscreen();
+            } else if (elem.msRequestFullscreen) {
+                elem.msRequestFullscreen();
+            }
+        }
+        
+        function exitFullscreen() {
+            if (document.exitFullscreen) {
+                document.exitFullscreen();
+            } else if (document.webkitExitFullscreen) {
+                document.webkitExitFullscreen();
+            } else if (document.msExitFullscreen) {
+                document.msExitFullscreen();
+            }
+        }
+        
+        function startSession() {
+            // Use demo images
+            state.images = [...DEMO_IMAGES];
+            state.currentIndex = 0;
+            state.isPaused = false;
+            state.pausedTime = 0;
+            
+            // Reset pause button states
+            document.getElementById('pause-button').style.display = 'flex';
+            document.getElementById('play-button').style.display = 'none';
+            
+            // Preload first few images
+            preloadImages(0, 3);
+            
+            showScreen('study');
+            document.body.classList.add('study-mode');
+            
+            if (state.useFullscreen) {
+                enterFullscreen();
+            }
+            
+            startTimer();
+            displayCurrentImage();
+        }
+        
+        function setupStudyScreen() {
+            // Toggle controls on image tap
+            document.getElementById('image-container').addEventListener('click', () => {
+                state.controlsVisible = !state.controlsVisible;
+                const controls = document.getElementById('study-controls');
+                const fullscreenBtn = document.getElementById('fullscreen-toggle-button');
+                
+                if (state.controlsVisible) {
+                    controls.classList.remove('hidden');
+                    fullscreenBtn.classList.remove('hidden');
+                } else {
+                    controls.classList.add('hidden');
+                    fullscreenBtn.classList.add('hidden');
+                }
+            });
+            
+            // Pause/Resume
+            document.getElementById('pause-button').addEventListener('click', () => {
+                pauseTimer();
+            });
+            
+            document.getElementById('play-button').addEventListener('click', () => {
+                resumeTimer();
+            });
+            
+            // Skip
+            document.getElementById('skip-button').addEventListener('click', () => {
+                nextImage();
+            });
+            
+            // End session
+            document.getElementById('end-button').addEventListener('click', () => {
+                if (confirm('End session early?')) {
+                    endSession();
+                }
+            });
+            
+            // Fullscreen toggle
+            document.getElementById('fullscreen-toggle-button').addEventListener('click', () => {
+                if (document.fullscreenElement) {
+                    exitFullscreen();
+                } else {
+                    enterFullscreen();
+                }
+            });
+        }
+        
+        function displayCurrentImage() {
+            const image = state.images[state.currentIndex];
+            const img = document.getElementById('current-image');
+            
+            img.src = image.image_path;
+            
+            // Update counter
+            document.getElementById('image-counter').textContent = 
+                `${state.currentIndex + 1} / ${state.images.length}`;
+            
+            // Preload next images
+            preloadImages(state.currentIndex + 1, state.currentIndex + 3);
+        }
+        
+        function preloadImages(start, end) {
+            for (let i = start; i <= end && i < state.images.length; i++) {
+                const img = new Image();
+                img.src = state.images[i].image_path;
+            }
+        }
+        
+        function startTimer() {
+            state.startTime = Date.now();
+            state.timerInterval = setInterval(updateTimer, 100);
+        }
+        
+        function updateTimer() {
+            const elapsed = Date.now() - state.startTime - state.pausedTime;
+            const remaining = state.duration * 1000 - elapsed;
+            const progress = Math.max(0, Math.min(100, (remaining / (state.duration * 1000)) * 100));
+            
+            // Update horizontal timer bar
+            document.getElementById('timer-bar').style.width = progress + '%';
+            
+            // Update radial timer
+            const circumference = 2 * Math.PI * 34;
+            const offset = circumference * (1 - progress / 100);
+            document.getElementById('timer-circle').style.strokeDasharray = circumference;
+            document.getElementById('timer-circle').style.strokeDashoffset = offset;
+            
+            // Update time text
+            const seconds = Math.ceil(remaining / 1000);
+            const mins = Math.floor(seconds / 60);
+            const secs = seconds % 60;
+            document.getElementById('timer-text').textContent = `${mins}:${secs.toString().padStart(2, '0')}`;
+            
+            if (remaining <= 0) {
+                nextImage();
+            }
+        }
+        
+        function pauseTimer() {
+            state.isPaused = true;
+            state.pauseStartTime = Date.now();
+            clearInterval(state.timerInterval);
+            document.getElementById('pause-button').style.display = 'none';
+            document.getElementById('play-button').style.display = 'flex';
+        }
+        
+        function resumeTimer() {
+            state.isPaused = false;
+            state.pausedTime += Date.now() - state.pauseStartTime;
+            state.timerInterval = setInterval(updateTimer, 100);
+            document.getElementById('pause-button').style.display = 'flex';
+            document.getElementById('play-button').style.display = 'none';
+        }
+        
+        function nextImage() {
+            state.currentIndex++;
+            
+            if (state.currentIndex >= state.images.length) {
+                endSession();
+            } else {
+                // Reset timer state for new image
+                state.pausedTime = 0;
+                state.startTime = Date.now();
+                
+                // Always resume timer when going to next image
+                if (state.isPaused) {
+                    state.isPaused = false;
+                    clearInterval(state.timerInterval);
+                    state.timerInterval = setInterval(updateTimer, 100);
+                    document.getElementById('pause-button').style.display = 'flex';
+                    document.getElementById('play-button').style.display = 'none';
+                }
+                
+                displayCurrentImage();
+            }
+        }
+        
+        function endSession() {
+            clearInterval(state.timerInterval);
+            state.timerInterval = null;
+            
+            // Reset pause state
+            state.isPaused = false;
+            state.pausedTime = 0;
+            document.getElementById('pause-button').style.display = 'flex';
+            document.getElementById('play-button').style.display = 'none';
+            
+            // Clear image to prevent flash on next session
+            document.getElementById('current-image').src = '';
+            
+            if (state.useFullscreen) {
+                exitFullscreen();
+            }
+            
+            showReviewScreen();
+        }
+        
+        function setupReviewScreen() {
+            // Setup panzoom on fullscreen image
+            const fullscreenImg = document.getElementById('fullscreen-image');
+            const panzoomInstance = Panzoom(fullscreenImg, {
+                maxScale: 3,
+                minScale: 1,
+                contain: 'outside',
+                cursor: 'grab',
+                pinchAndPan: true,
+                startScale: 1,
+                animate: false
+            });
+            
+            // Enable zoom with mouse wheel and pinch gestures
+            fullscreenImg.parentElement.addEventListener('wheel', panzoomInstance.zoomWithWheel);
+            
+            // Reset zoom when image loads
+            fullscreenImg.addEventListener('load', () => {
+                panzoomInstance.reset();
+            });
+            
+            document.getElementById('new-session-button').addEventListener('click', () => {
+                showScreen('start');
+                document.body.classList.remove('study-mode');
+            });
+            
+            document.getElementById('back-button').addEventListener('click', () => {
+                screens.fullscreen.style.display = 'none';
+                panzoomInstance.reset();
+            });
+            
+            document.getElementById('fullscreen-review-toggle').addEventListener('click', () => {
+                if (document.fullscreenElement) {
+                    exitFullscreen();
+                } else {
+                    enterFullscreen();
+                }
+            });
+        }
+        
+        function showReviewScreen() {
+            const grid = document.getElementById('thumbnail-grid');
+            grid.innerHTML = '';
+            
+            state.images.forEach((image, index) => {
+                const item = document.createElement('div');
+                item.className = 'thumbnail-item';
+                
+                const img = document.createElement('img');
+                img.src = image.image_path;
+                img.alt = image.name;
+                
+                item.appendChild(img);
+                
+                item.addEventListener('click', () => {
+                    showFullscreenReview(index);
+                });
+                
+                grid.appendChild(item);
+            });
+            
+            showScreen('review');
+            document.body.classList.remove('study-mode');
+        }
+        
+        function showFullscreenReview(index) {
+            state.reviewIndex = index;
+            const image = state.images[index];
+            
+            document.getElementById('fullscreen-image').src = image.image_path;
+            screens.fullscreen.style.display = 'block';
+        }
+        
+        function showScreen(name) {
+            Object.values(screens).forEach(screen => screen.style.display = 'none');
+            screens[name].style.display = name === 'start' ? 'flex' : 'block';
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,39 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+ENV/
+
+# Don't commit the actual Eagle library
+*.library/
+
+# Logs
+*.log
+
+# Test/temp files
+test/
+tmp/
+temp/
+
+# Configuration with personal paths
+config.json
+.env
+deploy.sh
+
+# animation exports
+blog-animation/

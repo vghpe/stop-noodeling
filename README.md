@@ -2,7 +2,7 @@
 
 A timed reference tool for figure drawing practice. Displays random images from your [Eagle](https://eagle.cool/) reference library on a timer.
 
-**[View Demo](demo/)**
+**[Try the Demo](https://vghpe.github.io/stop-noodeling/demo/)**
 
 ## Features
 

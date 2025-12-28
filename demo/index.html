@@ -927,6 +927,7 @@
             
             document.getElementById('back-button').addEventListener('click', () => {
                 screens.fullscreen.style.display = 'none';
+                screens.fullscreen.classList.add('hidden');
                 panzoomInstance.reset();
             });
             
@@ -970,6 +971,7 @@
             
             document.getElementById('fullscreen-image').src = image.image_path;
             screens.fullscreen.style.display = 'block';
+            screens.fullscreen.classList.remove('hidden');
         }
         
         function showScreen(name) {

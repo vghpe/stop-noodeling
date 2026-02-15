@@ -862,11 +862,14 @@
             try {
                 const isRemoteSource = state.source === 'wikimedia';
                 const buttonText = isRemoteSource ? 'Fetching images...' : 'Loading...';
+                const overlayMessage = isRemoteSource
+                    ? `Fetching initial batch (~10s).\nMore photos load safely in the background until ${state.count} are ready.`
+                    : 'Loading...';
                 document.getElementById('start-button').textContent = buttonText;
 
                 // If the first fetch takes a while, show a spinner overlay.
                 const loadingTimer = setTimeout(() => {
-                    showLoading(buttonText);
+                    showLoading(overlayMessage);
                 }, 400);
 
                 await cleanupRemoteSessionIfNeeded();

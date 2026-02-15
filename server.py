@@ -999,9 +999,6 @@ class FigureStudyHandler(http.server.SimpleHTTPRequestHandler):
                 annotation_parts = [
                     "Imported from Wikimedia Commons" + (f"\nOriginal: {original_title}" if original_title else "")
                 ]
-                if attribution_url:
-                    annotation_parts.append(f"Source: {attribution_url}")
-
                 metadata = {
                     'id': new_folder_id,
                     'name': eagle_name,
@@ -1010,8 +1007,7 @@ class FigureStudyHandler(http.server.SimpleHTTPRequestHandler):
                     'tags': ['study-favorite', 'wikimedia'],
                     'folders': [wikimedia_folder_id],
                     'isDeleted': False,
-                    # Keep `url` empty for image items; store attribution in annotation instead.
-                    'url': '',
+                    'url': attribution_url or '',
                     'annotation': "\n".join(annotation_parts),
                     'btime': now_ms(),
                     'mtime': now_ms(),

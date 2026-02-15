@@ -11,6 +11,7 @@ A timed reference tool for figure drawing practice. Displays random images from 
 - Mark favorites during study → syncs back to Eagle
 - Session review grid
 - Works with [Eagle](https://eagle.cool/) library format
+- Optional Wikimedia photo sessions (cached locally for the session)
 
 ## Quick Start
 
@@ -49,14 +50,20 @@ python3 server.py
 - Eagle app with an organized library
 - Modern web browser
 
+Optional (recommended for Wikimedia imports):
+- `Pillow` for generating Eagle-style `_thumbnail.png` files when saving Wikimedia images into the library.
+
 ## API Endpoints
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/` | GET | Serves the web app |
 | `/api/session` | GET | Get random images for session. Params: `count` (number of images) |
+| `/api/remote-session` | GET | Get random Wikimedia photos. Params: `count`, `source=wikimedia` |
 | `/api/favorite` | POST | Toggle favorite tag. Body: `{"folder": "image-folder-id"}` |
 | `/images/<path>` | GET | Serve image files from library |
+| `/api/remote-image/<path>` | GET | Serve cached Wikimedia images |
+| `/api/remote-session/cleanup` | POST | Delete cached Wikimedia images. Body: `{"session_id": "..."}` |
 
 ## Eagle Integration
 
@@ -149,6 +156,38 @@ Access via: `http://[local-ip]:8081`
 Server is a simple Python HTTP server with three main endpoints. All image serving happens through the `/images/` route which reads directly from the Eagle library.
 
 The web app is a single-page application in `index.html` - no build process needed.
+
+## Remote Sources (Wikimedia Photos)
+
+You can start a session from Wikimedia. Images are cached locally for the session and cleared when you click **New Session**.
+
+### Remote Cache Cleanup (Safety Net)
+
+Remote sessions cache downloaded files under `.remote_cache/<session_id>/`.
+
+- The server "touches" a session cache directory when you poll the session or request an image, so active sessions won't be deleted.
+- A background reaper runs once per hour and deletes remote session caches that have been inactive for 24 hours (default).
+
+You can override these with environment variables:
+
+```bash
+# TTL before a remote session cache is deleted (seconds)
+export STOP_NOODLING_REMOTE_CACHE_TTL_SECONDS=86400
+
+# How often the cleanup reaper runs (seconds)
+export STOP_NOODLING_REMOTE_CACHE_REAPER_INTERVAL_SECONDS=3600
+```
+
+**Favoriting Wikimedia Images:**
+- When you favorite a Wikimedia image (tap the star), it's automatically copied to your Eagle library
+- Creates a new folder with the image and metadata
+- Tags: `study-favorite` and `wikimedia`
+- Assigns the image to an Eagle folder named `Wikimedia Imports` (auto-created in the library if missing)
+- Includes attribution URL in metadata
+- Local images just get the `study-favorite` tag (existing behavior)
+
+If you see empty frames in Eagle for imported Wikimedia items, install Pillow so thumbnails can be generated:
+`python3 -m pip install pillow`
 
 ## License
 

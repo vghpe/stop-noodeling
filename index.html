@@ -90,6 +90,11 @@
             cursor: pointer;
             transition: all 0.2s;
         }
+
+        .button-group button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
         
         .button-group button:active,
         .button-group button.selected {
@@ -125,6 +130,49 @@
         #start-button:active {
             transform: scale(0.98);
             background: #3a7a8a;
+        }
+
+        /* Loading Overlay */
+        #loading-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.6);
+            z-index: 3000;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        #loading-box {
+            width: 100%;
+            max-width: 360px;
+            background: #282C2F;
+            border: 2px solid #5F544C;
+            border-radius: 12px;
+            padding: 18px 16px;
+            text-align: center;
+        }
+
+        .spinner {
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            border: 4px solid #3a3d3f;
+            border-top-color: #4998AE;
+            margin: 4px auto 12px auto;
+            animation: spin 0.9s linear infinite;
+        }
+
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
+        #loading-text {
+            color: #EAE6D3;
+            font-size: 1rem;
+            line-height: 1.4;
         }
         
         /* Study Mode */
@@ -228,6 +276,8 @@
             font-size: 0.9rem;
             color: #9A9388;
             text-align: center;
+            white-space: pre-line;
+            line-height: 1.3;
         }
         
         .control-buttons {
@@ -298,7 +348,7 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            z-index: 100;
+            z-index: 200;
             transition: all 0.3s;
             color: #ffffff;
         }
@@ -316,6 +366,10 @@
         
         #favorite-button:active {
             transform: scale(0.9);
+        }
+
+        #fullscreen-favorite-button.hidden {
+            display: none;
         }
         
         /* Review Screen */
@@ -342,6 +396,12 @@
             grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
             gap: 15px;
             margin-bottom: 2rem;
+        }
+
+        .settings-hint {
+            margin-top: 0.6rem;
+            font-size: 0.85rem;
+            color: #9A9388;
         }
         
         .thumbnail-item {
@@ -580,6 +640,15 @@
                 <button data-practice="hands">Hands</button>
             </div>
         </div>
+
+        <div class="settings-group">
+            <label>Source</label>
+            <div class="button-group">
+                <button data-source="local" class="selected">Local Library</button>
+                <button data-source="wikimedia">Wikimedia Photos</button>
+            </div>
+            <div class="settings-hint">Wikimedia pulls random photos and clears cache after the session.</div>
+        </div>
         
         <div class="settings-group">
             <label>Start in Full Screen</label>
@@ -590,6 +659,13 @@
         </div>
         
         <button id="start-button">Start Session</button>
+    </div>
+
+    <div id="loading-overlay">
+        <div id="loading-box">
+            <div class="spinner"></div>
+            <div id="loading-text">Loading...</div>
+        </div>
     </div>
     
     <!-- Study Screen -->
@@ -639,10 +715,15 @@
             duration: 60,
             count: 20,
             practiceType: 'figure',
+            source: 'local',
             useFullscreen: true,
             images: [],
             currentIndex: 0,
             isPaused: false,
+            isRemote: false,
+            remoteSessionId: null,
+            remoteFetching: false,
+            remotePollInterval: null,
             startTime: null,
             pausedTime: 0,
             timerInterval: null,
@@ -664,6 +745,18 @@
             setupStudyScreen();
             setupReviewScreen();
         });
+
+        function showLoading(message) {
+            const overlay = document.getElementById('loading-overlay');
+            const text = document.getElementById('loading-text');
+            text.textContent = message || 'Loading...';
+            overlay.style.display = 'flex';
+        }
+
+        function hideLoading() {
+            const overlay = document.getElementById('loading-overlay');
+            overlay.style.display = 'none';
+        }
         
         function setupStartScreen() {
             // Duration selection
@@ -695,9 +788,22 @@
             // Practice type selection
             document.querySelectorAll('[data-practice]').forEach(btn => {
                 btn.addEventListener('click', () => {
+                    if (btn.disabled) {
+                        return;
+                    }
                     document.querySelectorAll('[data-practice]').forEach(b => b.classList.remove('selected'));
                     btn.classList.add('selected');
                     state.practiceType = btn.dataset.practice;
+                });
+            });
+
+            // Source selection
+            document.querySelectorAll('[data-source]').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    document.querySelectorAll('[data-source]').forEach(b => b.classList.remove('selected'));
+                    btn.classList.add('selected');
+                    state.source = btn.dataset.source;
+                    updatePracticeAvailability();
                 });
             });
             
@@ -712,6 +818,23 @@
             
             // Start button
             document.getElementById('start-button').addEventListener('click', startSession);
+
+            updatePracticeAvailability();
+        }
+
+        function updatePracticeAvailability() {
+            const isLocal = state.source === 'local';
+            const practiceButtons = document.querySelectorAll('[data-practice]');
+
+            practiceButtons.forEach(btn => {
+                btn.disabled = !isLocal;
+            });
+
+            if (!isLocal) {
+                state.practiceType = 'figure';
+                document.querySelectorAll('[data-practice]').forEach(b => b.classList.remove('selected'));
+                document.querySelector('[data-practice="figure"]').classList.add('selected');
+            }
         }
         
         function enterFullscreen() {
@@ -737,10 +860,26 @@
         
         async function startSession() {
             try {
-                document.getElementById('start-button').textContent = 'Loading...';
+                const isRemoteSource = state.source === 'wikimedia';
+                const buttonText = isRemoteSource ? 'Fetching images...' : 'Loading...';
+                document.getElementById('start-button').textContent = buttonText;
+
+                // If the first fetch takes a while, show a spinner overlay.
+                const loadingTimer = setTimeout(() => {
+                    showLoading(buttonText);
+                }, 400);
+
+                await cleanupRemoteSessionIfNeeded();
+
+                const endpoint = isRemoteSource
+                    ? `/api/remote-session?count=${state.count}&source=wikimedia`
+                    : `/api/session?count=${state.count}&practice_type=${state.practiceType}`;
                 
-                const response = await fetch(`/api/session?count=${state.count}&practice_type=${state.practiceType}`);
+                const response = await fetch(endpoint);
                 const data = await response.json();
+
+                clearTimeout(loadingTimer);
+                hideLoading();
                 
                 if (!data.success) {
                     alert(`Error: ${data.error}`);
@@ -757,6 +896,16 @@
                 state.currentIndex = 0;
                 state.isPaused = false;
                 state.pausedTime = 0;
+                state.isRemote = data.source && data.source !== 'local';
+                state.remoteSessionId = data.session_id || null;
+                state.remoteFetching = data.fetching || false;
+
+                updateFavoriteVisibility();
+                
+                // Start polling for more images if remote and still fetching
+                if (state.remoteFetching && state.remoteSessionId) {
+                    startRemotePolling();
+                }
                 
                 // Reset pause button states
                 document.getElementById('pause-button').style.display = 'flex';
@@ -776,6 +925,7 @@
                 displayCurrentImage();
                 
             } catch (error) {
+                hideLoading();
                 alert(`Error starting session: ${error.message}`);
                 document.getElementById('start-button').textContent = 'Start Session';
             }
@@ -791,8 +941,8 @@
                 
                 if (state.controlsVisible) {
                     controls.classList.remove('hidden');
-                    favoriteBtn.classList.remove('hidden');
                     fullscreenBtn.classList.remove('hidden');
+                    favoriteBtn.classList.remove('hidden');
                 } else {
                     controls.classList.add('hidden');
                     favoriteBtn.classList.add('hidden');
@@ -810,19 +960,22 @@
             });
             
             // Skip
-            document.getElementById('skip-button').addEventListener('click', () => {
+            document.getElementById('skip-button').addEventListener('click', (e) => {
+                e.stopPropagation();
                 nextImage();
             });
             
             // End session
-            document.getElementById('end-button').addEventListener('click', () => {
+            document.getElementById('end-button').addEventListener('click', (e) => {
+                e.stopPropagation();
                 if (confirm('End session early?')) {
                     endSession();
                 }
             });
             
             // Fullscreen toggle
-            document.getElementById('fullscreen-toggle-button').addEventListener('click', () => {
+            document.getElementById('fullscreen-toggle-button').addEventListener('click', (e) => {
+                e.stopPropagation();
                 if (document.fullscreenElement) {
                     exitFullscreen();
                 } else {
@@ -831,7 +984,8 @@
             });
             
             // Favorite
-            document.getElementById('favorite-button').addEventListener('click', () => {
+            document.getElementById('favorite-button').addEventListener('click', (e) => {
+                e.stopPropagation();
                 toggleFavorite(state.currentIndex);
             });
         }
@@ -842,15 +996,25 @@
             
             img.src = image.image_path;
             
-            // Update counter
-            document.getElementById('image-counter').textContent = 
-                `${state.currentIndex + 1} / ${state.images.length}`;
+            // Update counter with fetch status
+            updateImageCounter();
             
             // Update favorite button
             updateFavoriteButton();
             
             // Preload next images
             preloadImages(state.currentIndex + 1, state.currentIndex + 3);
+        }
+        
+        function updateImageCounter() {
+            const counter = document.getElementById('image-counter');
+            let text = `${state.currentIndex + 1} / ${state.images.length}`;
+            
+            if (state.remoteFetching) {
+                text += `\n(of ${state.count}, loading more...)`;
+            }
+            
+            counter.textContent = text;
         }
         
         function preloadImages(start, end) {
@@ -933,6 +1097,9 @@
             clearInterval(state.timerInterval);
             state.timerInterval = null;
             
+            // Stop remote polling
+            stopRemotePolling();
+            
             // Reset pause state
             state.isPaused = false;
             state.pausedTime = 0;
@@ -949,14 +1116,94 @@
             showReviewScreen();
         }
         
-        async function toggleFavorite(index, isFullscreen = false) {
-            const image = state.images[index];
+        function startRemotePolling() {
+            if (state.remotePollInterval) {
+                return; // Already polling
+            }
+            
+            console.log('[Remote] Starting background image polling...');
+            state.remotePollInterval = setInterval(pollRemoteImages, 3000); // Poll every 3 seconds
+        }
+        
+        function stopRemotePolling() {
+            if (state.remotePollInterval) {
+                clearInterval(state.remotePollInterval);
+                state.remotePollInterval = null;
+                console.log('[Remote] Stopped background image polling');
+            }
+        }
+        
+        async function pollRemoteImages() {
+            if (!state.remoteSessionId || !state.remoteFetching) {
+                stopRemotePolling();
+                return;
+            }
             
             try {
+                const response = await fetch(`/api/remote-session/${state.remoteSessionId}`);
+                const data = await response.json();
+                
+                if (data.success) {
+                    const oldCount = state.images.length;
+                    const newImages = data.images.slice(oldCount); // Only new images
+                    
+                    if (newImages.length > 0) {
+                        state.images.push(...newImages);
+                        console.log(`[Remote] Added ${newImages.length} more images (total: ${state.images.length})`);
+                        
+                        // Update counter immediately
+                        updateImageCounter();
+                        
+                        // Preload new images
+                        newImages.forEach(img => {
+                            const preload = new Image();
+                            preload.src = img.image_path;
+                        });
+                    }
+                    
+                    state.remoteFetching = data.fetching;
+                    updateImageCounter();
+                    
+                    if (!data.fetching) {
+                        console.log(`[Remote] Background fetch complete. Total: ${state.images.length} images`);
+                        stopRemotePolling();
+                    }
+                }
+            } catch (error) {
+                console.error('[Remote] Polling error:', error);
+            }
+        }
+        
+        async function toggleFavorite(index, isFullscreen = false) {
+            const image = state.images[index];
+
+            if (!image) {
+                return;
+            }
+
+            // For remote images, treat favorite as "save" (avoid duplicating imports).
+            if (image.is_remote && image.favorited) {
+                return;
+            }
+            
+            try {
+                const requestBody = {
+                    is_remote: image.is_remote || false
+                };
+                
+                if (image.is_remote) {
+                    // Remote image - send full data to copy to Eagle library
+                    requestBody.image_data = image;
+                    requestBody.session_id = state.remoteSessionId;
+                } else {
+                    // Local image - just send folder
+                    requestBody.folder = image.folder;
+                }
+                
                 const response = await fetch('/api/favorite', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ folder: image.folder })
+                    body: JSON.stringify(requestBody)
                 });
                 
                 const data = await response.json();
@@ -964,6 +1211,13 @@
                 if (data.success) {
                     image.favorited = data.favorited;
                     updateFavoriteButton(isFullscreen);
+                    
+                    if (image.is_remote && data.favorited) {
+                        console.log(`[Favorite] Saved Wikimedia image to Eagle library: ${data.eagle_folder}`);
+                        if (!data.already_imported) {
+                            alert('Saved to Eagle: Wikimedia Imports');
+                        }
+                    }
                 }
             } catch (error) {
                 console.error('Error toggling favorite:', error);
@@ -974,8 +1228,16 @@
             const btnId = isFullscreen ? 'fullscreen-favorite-button' : 'favorite-button';
             const btn = document.getElementById(btnId);
             const image = state.images[isFullscreen ? state.reviewIndex : state.currentIndex];
+
+            if (!image) {
+                btn.classList.remove('favorited');
+                btn.textContent = '☆';
+                return;
+            }
+
+            const tags = image.tags || [];
             
-            if (image.favorited || image.tags.includes('study-favorite')) {
+            if (image.favorited || tags.includes('study-favorite')) {
                 btn.classList.add('favorited');
                 btn.textContent = '★';
             } else {
@@ -983,12 +1245,21 @@
                 btn.textContent = '☆';
             }
         }
+
+        function updateFavoriteVisibility() {
+            const favoriteBtn = document.getElementById('favorite-button');
+            const fullscreenFavoriteBtn = document.getElementById('fullscreen-favorite-button');
+
+            // Always show favorite button (works for both local and remote)
+            favoriteBtn.classList.remove('hidden');
+            fullscreenFavoriteBtn.classList.remove('hidden');
+        }
         
         function setupReviewScreen() {
             // Setup panzoom on fullscreen image
             const fullscreenImg = document.getElementById('fullscreen-image');
             const panzoomInstance = Panzoom(fullscreenImg, {
-                maxScale: 3,
+                maxScale: 6,
                 minScale: 1,
                 contain: 'outside',
                 cursor: 'grab',
@@ -1005,7 +1276,8 @@
                 panzoomInstance.reset();
             });
             
-            document.getElementById('new-session-button').addEventListener('click', () => {
+            document.getElementById('new-session-button').addEventListener('click', async () => {
+                await cleanupRemoteSessionIfNeeded();
                 showScreen('start');
                 document.body.classList.remove('study-mode');
                 document.getElementById('start-button').textContent = 'Start Session';
@@ -1051,7 +1323,8 @@
                 
                 item.appendChild(img);
                 
-                if (image.favorited || image.tags.includes('study-favorite')) {
+                const tags = image.tags || [];
+                if (image.favorited || tags.includes('study-favorite')) {
                     const badge = document.createElement('span');
                     badge.className = 'star-badge';
                     badge.textContent = '★';
@@ -1075,7 +1348,27 @@
             
             document.getElementById('fullscreen-image').src = image.image_path;
             updateFavoriteButton(true);
+            updateFavoriteVisibility();
             screens.fullscreen.style.display = 'block';
+        }
+
+        async function cleanupRemoteSessionIfNeeded() {
+            if (!state.remoteSessionId) {
+                return;
+            }
+
+            try {
+                await fetch('/api/remote-session/cleanup', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ session_id: state.remoteSessionId })
+                });
+            } catch (error) {
+                console.warn('Remote cleanup failed:', error);
+            } finally {
+                state.remoteSessionId = null;
+                state.isRemote = false;
+            }
         }
         
         function showScreen(name) {

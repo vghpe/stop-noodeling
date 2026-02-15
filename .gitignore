@@ -21,6 +21,8 @@ ENV/
 
 # Don't commit the actual Eagle library
 *.library/
+*.remote_cache/
+
 
 # Logs
 *.log
@@ -37,5 +39,6 @@ deploy.sh
 
 # animation exports
 blog-animation/
+
 # Personal documentation (local only)
-Documentation/
+/Documentation/

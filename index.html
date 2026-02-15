@@ -275,9 +275,45 @@
         #image-counter {
             font-size: 0.9rem;
             color: #9A9388;
-            text-align: center;
-            white-space: pre-line;
+            text-align: right;
             line-height: 1.3;
+            min-height: 1.1em;
+            white-space: nowrap;
+            width: 100%;
+            align-self: flex-end;
+        }
+
+        #image-progress {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+        }
+
+        .dots {
+            display: none;
+            margin-top: 6px;
+            height: 10px;
+        }
+
+        .dots .dot {
+            display: inline-block;
+            width: 5px;
+            height: 5px;
+            margin: 0 3px;
+            border-radius: 50%;
+            background: #5F544C;
+            opacity: 0.3;
+            animation: dotPulse 1s infinite ease-in-out;
+        }
+
+        .dots .dot:nth-child(2) { animation-delay: 0.15s; }
+        .dots .dot:nth-child(3) { animation-delay: 0.30s; }
+
+        @keyframes dotPulse {
+            0%, 80%, 100% { opacity: 0.25; transform: translateY(0); }
+            40% { opacity: 0.75; transform: translateY(-1px); }
         }
         
         .control-buttons {
@@ -300,6 +336,11 @@
             display: flex;
             align-items: center;
             justify-content: center;
+        }
+
+        .control-buttons button:disabled {
+            opacity: 0.45;
+            cursor: not-allowed;
         }
         
         .control-buttons button:active {
@@ -559,8 +600,11 @@
                 order: 1;
             }
             
-            #image-counter {
+            #image-progress {
                 order: 0;
+            }
+
+            #image-counter {
                 font-size: 0.8rem;
             }
             
@@ -683,12 +727,19 @@
                 </svg>
                 <div class="timer-text" id="timer-text">1:00</div>
             </div>
-            <div id="image-counter">1 / 20</div>
             <div class="control-buttons">
                 <button id="pause-button" title="Pause"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg></button>
                 <button id="play-button" title="Play" style="display: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg></button>
                 <button id="skip-button" title="Skip"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 4 13 12 5 20 5 4"></polygon><polygon points="13 4 21 12 13 20 13 4"></polygon></svg></button>
                 <button id="end-button" title="End"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12"></rect></svg></button>
+            </div>
+            <div id="image-progress">
+                <div id="image-counter">1 / 20</div>
+                <div id="remote-fetching-indicator" class="dots" aria-hidden="true">
+                    <span class="dot"></span>
+                    <span class="dot"></span>
+                    <span class="dot"></span>
+                </div>
             </div>
         </div>
         <button id="fullscreen-toggle-button" title="Toggle Fullscreen"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path></svg></button>
@@ -723,6 +774,7 @@
             isRemote: false,
             remoteSessionId: null,
             remoteFetching: false,
+            waitingForRemote: false,
             remotePollInterval: null,
             startTime: null,
             pausedTime: 0,
@@ -1011,13 +1063,25 @@
         
         function updateImageCounter() {
             const counter = document.getElementById('image-counter');
-            let text = `${state.currentIndex + 1} / ${state.images.length}`;
-            
-            if (state.remoteFetching) {
-                text += `\n(of ${state.count}, loading more...)`;
+            const indicator = document.getElementById('remote-fetching-indicator');
+            const skipBtn = document.getElementById('skip-button');
+
+            if (state.isRemote && state.remoteFetching) {
+                counter.textContent = `${state.currentIndex + 1} / (${state.images.length}) ${state.count}`;
+            } else {
+                counter.textContent = `${state.currentIndex + 1} / ${Math.max(state.images.length, 1)}`;
             }
-            
-            counter.textContent = text;
+
+            if (state.isRemote && state.remoteFetching) {
+                indicator.style.display = 'block';
+            } else {
+                indicator.style.display = 'none';
+            }
+
+            // While waiting for more remote images, disable skip to avoid the feeling of a broken button.
+            if (skipBtn) {
+                skipBtn.disabled = !!state.waitingForRemote;
+            }
         }
         
         function preloadImages(start, end) {
@@ -1074,8 +1138,22 @@
         }
         
         function nextImage() {
-            state.currentIndex++;
-            
+            const nextIndex = state.currentIndex + 1;
+
+            // Remote sessions can start with a few images and grow over time.
+            // If we reached the end of what’s loaded but the server is still fetching,
+            // hold here until more images arrive.
+            if (state.isRemote && state.remoteFetching && nextIndex >= state.images.length) {
+                state.waitingForRemote = true;
+                state.currentIndex = Math.max(0, state.images.length - 1);
+                clearInterval(state.timerInterval);
+                state.timerInterval = null;
+                updateImageCounter();
+                return;
+            }
+
+            state.currentIndex = nextIndex;
+
             if (state.currentIndex >= state.images.length) {
                 endSession();
             } else {
@@ -1099,6 +1177,8 @@
         function endSession() {
             clearInterval(state.timerInterval);
             state.timerInterval = null;
+
+            state.waitingForRemote = false;
             
             // Stop remote polling
             stopRemotePolling();
@@ -1166,6 +1246,17 @@
                     
                     state.remoteFetching = data.fetching;
                     updateImageCounter();
+
+                    // If we were waiting at the end, continue automatically once we have more.
+                    if (state.waitingForRemote && state.images.length > 0 && state.currentIndex < state.images.length - 1) {
+                        state.waitingForRemote = false;
+                        state.pausedTime = 0;
+                        state.startTime = Date.now();
+                        if (!state.timerInterval) {
+                            state.timerInterval = setInterval(updateTimer, 100);
+                        }
+                        nextImage();
+                    }
                     
                     if (!data.fetching) {
                         console.log(`[Remote] Background fetch complete. Total: ${state.images.length} images`);

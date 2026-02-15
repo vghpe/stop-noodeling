@@ -964,6 +964,7 @@ class FigureStudyHandler(http.server.SimpleHTTPRequestHandler):
                 # - thumbnail should be `<name>_thumbnail.png`
                 eagle_name = str(page_id)
                 original_title = image_data.get('name', '')
+                attribution_url = image_data.get('attribution_url', '')
 
                 # Copy to Eagle library
                 dest_filename = f"{eagle_name}{source_path.suffix.lower()}"

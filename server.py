@@ -279,8 +279,47 @@ def download_wikimedia_image(page: dict, session_dir: Path, session_id: str) -> 
     if mediatype != 'BITMAP' or not mime.startswith('image/'):
         return None
 
+    # Heuristic filtering to bias toward photographic content.
+    # Keep it lightweight: prefer JPEGs and avoid common non-photo keywords.
+    # (Commons metadata is messy; this is best-effort.)
+    if (mime or '').lower() not in ('image/jpeg', 'image/jpg'):
+        return None
+
+    width = int(image_info.get('width') or 0)
+    height = int(image_info.get('height') or 0)
+    size_bytes = int(image_info.get('size') or 0)
+    if width and height:
+        # Avoid tiny assets (icons, diagrams, UI elements)
+        if min(width, height) < 700:
+            return None
+    if size_bytes:
+        if size_bytes < 120 * 1024:
+            return None
+
     ext = Path(urllib.parse.urlparse(url).path).suffix.lower()
-    if ext not in ['.jpg', '.jpeg', '.png', '.gif', '.webp']:
+    if ext not in ['.jpg', '.jpeg']:
+        return None
+
+    title = page.get('title', '')
+    if title.startswith('File:'):
+        title = title[5:]
+
+    lower_title = (title or '').lower()
+    description = ''
+    extmeta = image_info.get('extmetadata') or {}
+    if isinstance(extmeta, dict):
+        desc_obj = extmeta.get('ImageDescription')
+        if isinstance(desc_obj, dict):
+            description = str(desc_obj.get('value') or '')
+        elif isinstance(desc_obj, str):
+            description = desc_obj
+    lower_text = (lower_title + ' ' + (description or '').lower())
+    reject_keywords = (
+        'newspaper', 'clipping', 'logo', 'icon', 'diagram', 'infographic',
+        'map', 'coat of arms', 'flag', 'poster', 'screenshot', 'scan of',
+        'vector', 'svg'
+    )
+    if any(k in lower_text for k in reject_keywords):
         return None
 
     filename = f"{page_id}{ext}"
@@ -295,10 +334,6 @@ def download_wikimedia_image(page: dict, session_dir: Path, session_id: str) -> 
         thumb_path = session_dir / thumb_filename
         if not download_file(thumb_url, thumb_path):
             thumb_filename = None
-
-    title = page.get('title', '')
-    if title.startswith('File:'):
-        title = title[5:]
 
     return {
         'id': f"wikimedia:{page_id}",
@@ -344,7 +379,7 @@ def fetch_wikimedia_imageinfo(titles: List[str]) -> List[dict]:
         'format': 'json',
         'formatversion': '2',
         'prop': 'imageinfo',
-        'iiprop': 'url|mime|mediatype|extmetadata',
+        'iiprop': 'url|mime|mediatype|extmetadata|size|dimensions',
         'iiurlwidth': '400',
         'titles': '|'.join(titles)
     }
@@ -938,6 +973,15 @@ class FigureStudyHandler(http.server.SimpleHTTPRequestHandler):
                 # Create Eagle thumbnail if possible
                 thumbnail_path = new_folder / f"{eagle_name}_thumbnail.png"
                 wrote_thumbnail = try_write_thumbnail_png(dest_path, thumbnail_path)
+                width = 0
+                height = 0
+                if Image is not None:
+                    try:
+                        with Image.open(dest_path) as img:
+                            width, height = img.size
+                    except Exception:
+                        width = 0
+                        height = 0
                 if not wrote_thumbnail:
                     # Best-effort: if we have a cached thumbnail and it's already PNG, copy it into place.
                     thumb_path_data = image_data.get('thumbnail_path', '')
@@ -951,6 +995,13 @@ class FigureStudyHandler(http.server.SimpleHTTPRequestHandler):
                                     shutil.copy2(source_thumb, thumbnail_path)
                 
                 # Create metadata.json with favorite tag
+                attribution_url = image_data.get('attribution_url', '')
+                annotation_parts = [
+                    "Imported from Wikimedia Commons" + (f"\nOriginal: {original_title}" if original_title else "")
+                ]
+                if attribution_url:
+                    annotation_parts.append(f"Source: {attribution_url}")
+
                 metadata = {
                     'id': new_folder_id,
                     'name': eagle_name,
@@ -959,14 +1010,15 @@ class FigureStudyHandler(http.server.SimpleHTTPRequestHandler):
                     'tags': ['study-favorite', 'wikimedia'],
                     'folders': [wikimedia_folder_id],
                     'isDeleted': False,
-                    'url': image_data.get('attribution_url', ''),
-                    'annotation': f"Imported from Wikimedia Commons\nOriginal: {original_title}" if original_title else "Imported from Wikimedia Commons",
+                    # Keep `url` empty for image items; store attribution in annotation instead.
+                    'url': '',
+                    'annotation': "\n".join(annotation_parts),
                     'btime': now_ms(),
                     'mtime': now_ms(),
                     'modificationTime': now_ms(),
                     'lastModified': now_ms(),
-                    'width': 0,
-                    'height': 0
+                    'width': int(width),
+                    'height': int(height)
                 }
                 
                 metadata_file = new_folder / 'metadata.json'

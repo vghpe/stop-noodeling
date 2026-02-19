@@ -422,6 +422,26 @@
             z-index: 2001;
             color: #EAE6D3;
         }
+
+        #fullscreen-lock-button {
+            position: fixed;
+            top: 20px;
+            right: 90px;
+            width: 60px;
+            height: 60px;
+            background: rgba(40, 44, 47, 0.8);
+            border: 2px solid #5F544C;
+            border-radius: 50%;
+            cursor: pointer;
+            font-size: 1.6rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 2001;
+            color: #EAE6D3;
+            user-select: none;
+            -webkit-user-select: none;
+        }
         
         .loading {
             text-align: center;
@@ -593,6 +613,7 @@
     <!-- Fullscreen Review -->
     <div id="fullscreen-review">
         <button id="back-button"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg> Back</button>
+        <button id="fullscreen-lock-button" title="Lock pan/zoom" aria-pressed="false" aria-label="Lock pan and zoom"></button>
         <button id="fullscreen-review-toggle" title="Toggle Fullscreen"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path></svg></button>
         <img id="fullscreen-image" alt="Review image">
     </div>
@@ -625,7 +646,8 @@
             pausedTime: 0,
             timerInterval: null,
             controlsVisible: true,
-            reviewIndex: null
+            reviewIndex: null,
+            fullscreenReviewLocked: false
         };
         
         // DOM Elements
@@ -902,6 +924,7 @@
         function setupReviewScreen() {
             // Setup panzoom on fullscreen image
             const fullscreenImg = document.getElementById('fullscreen-image');
+            const fullscreenContainer = document.getElementById('fullscreen-review');
             const panzoomInstance = Panzoom(fullscreenImg, {
                 maxScale: 3,
                 minScale: 1,
@@ -913,7 +936,63 @@
             });
             
             // Enable zoom with mouse wheel and pinch gestures
-            fullscreenImg.parentElement.addEventListener('wheel', panzoomInstance.zoomWithWheel);
+            fullscreenImg.parentElement.addEventListener('wheel', (e) => {
+                if (state.fullscreenReviewLocked) {
+                    e.preventDefault();
+                    return;
+                }
+                panzoomInstance.zoomWithWheel(e);
+            }, { passive: false });
+
+            const lockBtn = document.getElementById('fullscreen-lock-button');
+            const LOCKED_SVG = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"></rect><path d="M8 11V8a4 4 0 0 1 8 0v3"></path><path d="M12 16v2"></path></svg>';
+            const UNLOCKED_SVG = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"></rect><path d="M8 11V8a4 4 0 0 1 7.5-2"></path><path d="M12 16v2"></path></svg>';
+            const syncLockUi = () => {
+                const locked = !!state.fullscreenReviewLocked;
+                lockBtn.innerHTML = locked ? LOCKED_SVG : UNLOCKED_SVG;
+                lockBtn.setAttribute('aria-pressed', locked ? 'true' : 'false');
+                lockBtn.setAttribute('aria-label', locked ? 'Unlock pan and zoom' : 'Lock pan and zoom');
+                lockBtn.title = locked ? 'Unlock pan/zoom' : 'Lock pan/zoom';
+            };
+            syncLockUi();
+
+            const setFullscreenReviewLocked = (locked) => {
+                state.fullscreenReviewLocked = !!locked;
+                if (typeof panzoomInstance.setOptions === 'function') {
+                    panzoomInstance.setOptions({
+                        disablePan: state.fullscreenReviewLocked,
+                        disableZoom: state.fullscreenReviewLocked
+                    });
+                }
+                syncLockUi();
+            };
+
+            state.setFullscreenReviewLocked = setFullscreenReviewLocked;
+
+            lockBtn.addEventListener('click', () => {
+                setFullscreenReviewLocked(!state.fullscreenReviewLocked);
+            });
+
+            const shouldBlockReviewInteraction = (e) => {
+                if (!state.fullscreenReviewLocked) {
+                    return false;
+                }
+                if (e.target && e.target.closest && e.target.closest('button')) {
+                    return false;
+                }
+                return true;
+            };
+
+            ['pointerdown', 'pointermove', 'touchstart', 'touchmove', 'gesturestart', 'gesturechange', 'gestureend', 'wheel']
+                .forEach((eventName) => {
+                    fullscreenContainer.addEventListener(eventName, (e) => {
+                        if (!shouldBlockReviewInteraction(e)) {
+                            return;
+                        }
+                        e.preventDefault();
+                        e.stopImmediatePropagation();
+                    }, { capture: true, passive: false });
+                });
             
             // Reset zoom when image loads
             fullscreenImg.addEventListener('load', () => {
@@ -928,6 +1007,7 @@
             document.getElementById('back-button').addEventListener('click', () => {
                 screens.fullscreen.style.display = 'none';
                 screens.fullscreen.classList.add('hidden');
+                setFullscreenReviewLocked(false);
                 panzoomInstance.reset();
             });
             
@@ -970,6 +1050,11 @@
             const image = state.images[index];
             
             document.getElementById('fullscreen-image').src = image.image_path;
+            if (typeof state.setFullscreenReviewLocked === 'function') {
+                state.setFullscreenReviewLocked(false);
+            } else {
+                state.fullscreenReviewLocked = false;
+            }
             screens.fullscreen.style.display = 'block';
             screens.fullscreen.classList.remove('hidden');
         }

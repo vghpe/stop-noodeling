@@ -1,5 +1,7 @@
 {
   "port": 8081,
   "library_path": "~/Pictures/Figure Drawing References.library",
+  "unsplash_access_key": "YOUR_UNSPLASH_ACCESS_KEY",
+  "unsplash_query": "people",
   "note": "Copy this file to config.json and update with your actual paths. The config.json file is gitignored."
 }

@@ -12,14 +12,16 @@ import random
 import shutil
 import urllib.parse
 import urllib.request
+import html
 import time
 import uuid
 import threading
 import hashlib
 import socket
+from collections import deque
 from concurrent.futures import ThreadPoolExecutor, as_completed, wait, FIRST_COMPLETED
 from pathlib import Path
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional, Tuple, Deque, Set
 
 try:
     from PIL import Image  # type: ignore
@@ -85,7 +87,35 @@ EAGLE_METADATA_LOCK = threading.Lock()
 REMOTE_CACHE_MAX_AGE_SECONDS = int(os.getenv('STOP_NOODLING_REMOTE_CACHE_TTL_SECONDS', '86400'))
 REMOTE_CACHE_REAPER_INTERVAL_SECONDS = int(os.getenv('STOP_NOODLING_REMOTE_CACHE_REAPER_INTERVAL_SECONDS', '3600'))
 
-WIKIMEDIA_USER_AGENT = "StopNoodling/1.0 (https://github.com/vghpe/stop-noodeling)"
+USER_AGENT = "StopNoodling/1.0 (https://github.com/vghpe/stop-noodeling)"
+UNSPLASH_API_BASE = "https://api.unsplash.com"
+
+UNSPLASH_RECENT_IDS_LOCK = threading.Lock()
+UNSPLASH_RECENT_IDS: Deque[str] = deque(maxlen=1200)
+UNSPLASH_RECENT_SET: Set[str] = set()
+
+UNSPLASH_PREFERRED_TERMS = (
+    'candid', 'natural', 'street', 'documentary', 'real', 'everyday',
+    'lifestyle', 'unposed', 'authentic', 'expression', 'portrait'
+)
+
+UNSPLASH_REJECT_TERMS = (
+    'stock', 'staged', 'posed', 'studio', 'product', 'mockup', 'template',
+    'branding', 'advertising', 'commercial', 'catalog', 'wedding', 'glamour',
+    'photoshoot', 'fashion shoot', 'headshot session', 'getty images',
+    'shutterstock', 'istock', 'depositphotos', 'alamy'
+)
+
+UNSPLASH_QUERY_VARIANTS = (
+    'candid portrait',
+    'natural portrait',
+    'street portrait',
+    'documentary portrait',
+    'environmental portrait',
+    'unposed portrait',
+    'lifestyle portrait',
+    'people portrait'
+)
 
 
 def now_ms() -> int:
@@ -249,7 +279,7 @@ def remote_cache_reaper_loop():
 
 def download_file(url: str, dest_path: Path) -> bool:
     try:
-        req = urllib.request.Request(url, headers={'User-Agent': WIKIMEDIA_USER_AGENT})
+        req = urllib.request.Request(url, headers={'User-Agent': USER_AGENT})
         with urllib.request.urlopen(req, timeout=10) as response:
             dest_path.parent.mkdir(parents=True, exist_ok=True)
             with open(dest_path, 'wb') as f:
@@ -261,6 +291,257 @@ def download_file(url: str, dest_path: Path) -> bool:
         return True
     except Exception as e:
         return False
+
+
+def normalize_unsplash_text(value: object) -> str:
+    if value is None:
+        return ""
+    text = html.unescape(str(value))
+    return " ".join(text.split()).strip()
+
+
+def unsplash_reserve_recent_ids(ids: List[str]):
+    """Reserve IDs in a bounded in-memory history to avoid near-term repeats across sessions."""
+    if not ids:
+        return
+
+    with UNSPLASH_RECENT_IDS_LOCK:
+        for image_id in ids:
+            if image_id in UNSPLASH_RECENT_SET:
+                continue
+            if len(UNSPLASH_RECENT_IDS) == UNSPLASH_RECENT_IDS.maxlen:
+                expired = UNSPLASH_RECENT_IDS.popleft()
+                UNSPLASH_RECENT_SET.discard(expired)
+            UNSPLASH_RECENT_IDS.append(image_id)
+            UNSPLASH_RECENT_SET.add(image_id)
+
+
+def unsplash_recent_ids_snapshot() -> Set[str]:
+    with UNSPLASH_RECENT_IDS_LOCK:
+        return set(UNSPLASH_RECENT_SET)
+
+
+def unsplash_score_and_validate(photo: dict) -> Optional[Tuple[int, dict, str]]:
+    """Return (score, mapped_image, photographer_key) for valid photos, otherwise None."""
+    if not isinstance(photo, dict):
+        return None
+
+    photo_id = str(photo.get('id') or '').strip()
+    urls = photo.get('urls') or {}
+    links = photo.get('links') or {}
+    user = photo.get('user') or {}
+
+    if not photo_id:
+        return None
+
+    image_url = urls.get('regular') or urls.get('small') or urls.get('full')
+    thumb_url = urls.get('small') or urls.get('thumb') or image_url
+    if not image_url:
+        return None
+
+    width = int(photo.get('width') or 0)
+    height = int(photo.get('height') or 0)
+    # Portrait is a hard requirement.
+    if width <= 0 or height <= 0:
+        return None
+    if height <= width:
+        return None
+
+    description = normalize_unsplash_text(photo.get('description'))
+    alt_description = normalize_unsplash_text(photo.get('alt_description'))
+    user_name = normalize_unsplash_text(user.get('name'))
+    user_username = normalize_unsplash_text(user.get('username'))
+    user_id = normalize_unsplash_text(user.get('id'))
+    user_bio = normalize_unsplash_text(user.get('bio'))
+    user_portfolio = normalize_unsplash_text(user.get('portfolio_url'))
+
+    tags: List[str] = []
+    raw_tags = photo.get('tags') or []
+    if isinstance(raw_tags, list):
+        for tag in raw_tags:
+            if not isinstance(tag, dict):
+                continue
+            title = normalize_unsplash_text(tag.get('title'))
+            if title:
+                tags.append(title)
+
+    searchable_text = " ".join([
+        description.lower(),
+        alt_description.lower(),
+        " ".join(tags).lower(),
+        user_name.lower(),
+        user_username.lower(),
+        user_bio.lower(),
+        user_portfolio.lower(),
+    ])
+
+    # Hard block known stock/distributor indicators.
+    if 'gettyimages' in searchable_text or 'getty images' in searchable_text:
+        return None
+
+    if any(term in searchable_text for term in UNSPLASH_REJECT_TERMS):
+        return None
+
+    score = 0
+    if height > width and width >= 500 and height >= 700:
+        score += 6
+
+    preferred_hits = sum(1 for term in UNSPLASH_PREFERRED_TERMS if term in searchable_text)
+    score += preferred_hits * 3
+
+    # Slight preference for images that include person tags/descriptions.
+    people_terms = ('person', 'people', 'portrait', 'face', 'man', 'woman')
+    people_hits = sum(1 for term in people_terms if term in searchable_text)
+    score += people_hits * 2
+    score += random.randint(0, 2)
+
+    name = description or alt_description or f"Unsplash {photo_id}"
+
+    mapped = {
+        'id': f"unsplash:{photo_id}",
+        'name': name,
+        'image_path': image_url,
+        'thumbnail_path': thumb_url,
+        'tags': tags,
+        'folder': None,
+        'is_remote': True,
+        'source': 'unsplash',
+        'attribution_url': links.get('html') or '',
+        'download_location': links.get('download_location') or '',
+        'attribution_name': user_name,
+        'attribution_username': user_username
+    }
+
+    photographer_key = user_id or user_username or f"photo:{photo_id}"
+
+    return score, mapped, photographer_key
+
+
+def fetch_unsplash_photos(count: int, query: str) -> List[dict]:
+    access_key = str(CONFIG.get('unsplash_access_key') or '').strip()
+    if not access_key:
+        raise ValueError("Unsplash access key missing. Set 'unsplash_access_key' in config.json")
+
+    safe_count = max(1, min(count, 30))
+    safe_query = query.strip() or str(CONFIG.get('unsplash_query') or 'people')
+
+    # Pull several portrait search batches with randomized query/page to avoid repetitive top results.
+    candidates_by_id: Dict[str, Tuple[int, dict]] = {}
+    candidate_photographer: Dict[str, str] = {}
+    recent_ids = unsplash_recent_ids_snapshot()
+    attempts = 0
+    max_attempts = 4
+
+    query_variants: List[str] = []
+    if safe_query:
+        query_variants.extend([
+            f"{safe_query} portrait",
+            f"candid {safe_query} portrait",
+            f"natural {safe_query} portrait",
+            f"street {safe_query} portrait"
+        ])
+    query_variants.extend(UNSPLASH_QUERY_VARIANTS)
+    # De-duplicate while preserving order.
+    deduped_query_variants: List[str] = []
+    seen_queries = set()
+    for q in query_variants:
+        cleaned = " ".join(q.split()).strip()
+        if not cleaned or cleaned in seen_queries:
+            continue
+        seen_queries.add(cleaned)
+        deduped_query_variants.append(cleaned)
+
+    if not deduped_query_variants:
+        deduped_query_variants = ['people portrait']
+
+    while len(candidates_by_id) < safe_count and attempts < max_attempts:
+        attempts += 1
+        batch_size = min(30, max(safe_count * 2, 20))
+        selected_query = random.choice(deduped_query_variants)
+        random_page = random.randint(2, 120)
+        order_by = random.choice(['latest', 'relevant'])
+
+        params = {
+            'query': selected_query,
+            'page': str(random_page),
+            'per_page': str(batch_size),
+            'order_by': order_by,
+            'content_filter': 'high',
+            'orientation': 'portrait'
+        }
+        url = f"{UNSPLASH_API_BASE}/search/photos?{urllib.parse.urlencode(params)}"
+        req = urllib.request.Request(
+            url,
+            headers={
+                'Authorization': f'Client-ID {access_key}',
+                'Accept-Version': 'v1',
+                'Accept': 'application/json',
+                'User-Agent': USER_AGENT
+            }
+        )
+
+        try:
+            with urllib.request.urlopen(req, timeout=15) as response:
+                remaining = response.headers.get('X-Ratelimit-Remaining')
+                if remaining is not None:
+                    print(f"[Unsplash] Rate limit remaining: {remaining}")
+                data = json.load(response)
+        except (TimeoutError, socket.timeout, urllib.error.URLError) as e:
+            print(f"[Unsplash] API call failed (attempt {attempts}): {e}")
+            continue
+        except urllib.error.HTTPError as e:
+            print(f"[Unsplash] API error {e.code} (attempt {attempts}): {e.reason}")
+            continue
+
+        results = data.get('results') if isinstance(data, dict) else []
+        if not isinstance(results, list):
+            results = []
+
+        for photo in results:
+            scored = unsplash_score_and_validate(photo)
+            if not scored:
+                continue
+
+            score, mapped, photographer_key = scored
+            photo_id = str(mapped.get('id') or '')
+            if not photo_id or photo_id in recent_ids:
+                continue
+
+            existing = candidates_by_id.get(photo_id)
+            if not existing or score > existing[0]:
+                candidates_by_id[photo_id] = (score, mapped)
+                candidate_photographer[photo_id] = photographer_key
+
+    ranked = sorted(candidates_by_id.values(), key=lambda item: item[0], reverse=True)
+
+    selected: List[dict] = []
+    photographers_in_session: Set[str] = set()
+    for score, mapped in ranked:
+        if len(selected) >= safe_count:
+            break
+        photo_id = str(mapped.get('id') or '')
+        photographer_key = candidate_photographer.get(photo_id, photo_id)
+        if photographer_key in photographers_in_session:
+            continue
+        selected.append(mapped)
+        photographers_in_session.add(photographer_key)
+
+    # If strict photographer uniqueness leaves a gap, fill from remaining ranked items.
+    if len(selected) < safe_count:
+        selected_ids = {str(img.get('id') or '') for img in selected}
+        for score, mapped in ranked:
+            if len(selected) >= safe_count:
+                break
+            photo_id = str(mapped.get('id') or '')
+            if photo_id in selected_ids:
+                continue
+            selected.append(mapped)
+            selected_ids.add(photo_id)
+
+    selected_ids = [str(img.get('id') or '') for img in selected]
+    unsplash_reserve_recent_ids([image_id for image_id in selected_ids if image_id])
+
+    return selected
 
 
 def download_wikimedia_image(page: dict, session_dir: Path, session_id: str) -> Optional[dict]:
@@ -360,7 +641,7 @@ def fetch_wikimedia_random_pages(limit: int = 50) -> List[dict]:
     }
 
     url = f"https://commons.wikimedia.org/w/api.php?{urllib.parse.urlencode(params)}"
-    req = urllib.request.Request(url, headers={'User-Agent': WIKIMEDIA_USER_AGENT})
+    req = urllib.request.Request(url, headers={'User-Agent': USER_AGENT})
 
     try:
         with urllib.request.urlopen(req, timeout=15) as response:
@@ -385,7 +666,7 @@ def fetch_wikimedia_imageinfo(titles: List[str]) -> List[dict]:
     }
 
     url = f"https://commons.wikimedia.org/w/api.php?{urllib.parse.urlencode(params)}"
-    req = urllib.request.Request(url, headers={'User-Agent': WIKIMEDIA_USER_AGENT})
+    req = urllib.request.Request(url, headers={'User-Agent': USER_AGENT})
 
     try:
         with urllib.request.urlopen(req, timeout=15) as response:
@@ -728,16 +1009,49 @@ class FigureStudyHandler(http.server.SimpleHTTPRequestHandler):
             self.send_json_error(500, f"Error creating session: {str(e)}")
 
     def create_remote_session(self, query_string: str):
-        """Create a remote session using Wikimedia photos"""
+        """Create a remote session using supported remote providers"""
         start_time = time.time()
 
         params = urllib.parse.parse_qs(query_string)
         count = int(params.get('count', ['20'])[0])
         source = params.get('source', ['wikimedia'])[0]
+        query = params.get('query', [''])[0]
 
-        if source != 'wikimedia':
+        if source not in ('wikimedia', 'unsplash'):
             self.send_json_error(400, f"Unsupported source: {source}")
             return
+
+        if source == 'unsplash':
+            try:
+                images = fetch_unsplash_photos(count, query)
+                if not images:
+                    self.send_json_error(500, "No images found from Unsplash")
+                    return
+
+                elapsed_time = time.time() - start_time
+                print(f"[Performance] Unsplash returned {len(images)} images in {elapsed_time:.3f}s")
+
+                self.send_json_response({
+                    'success': True,
+                    'images': images,
+                    'total': len(images),
+                    'source': 'unsplash',
+                    'session_id': None,
+                    'fetching': False,
+                    'warning': f"Only found {len(images)} portrait candid/natural images (requested {count})" if len(images) < count else None
+                })
+                return
+            except urllib.error.HTTPError as e:
+                detail = ""
+                try:
+                    detail = e.read().decode('utf-8', errors='replace')
+                except Exception:
+                    detail = ""
+                self.send_json_error(502, f"Unsplash API error ({e.code}): {detail or e.reason}")
+                return
+            except Exception as e:
+                self.send_json_error(500, f"Error creating Unsplash session: {str(e)}")
+                return
 
         cleanup_orphaned_remote_cache()
         ensure_remote_cache_dir()
@@ -902,7 +1216,8 @@ class FigureStudyHandler(http.server.SimpleHTTPRequestHandler):
             if is_remote and image_data:
                 # Favoriting a remote image - copy it to Eagle library
                 session_id = data.get('session_id')
-                if not session_id:
+                remote_source = str(image_data.get('source', 'wikimedia'))
+                if remote_source == 'wikimedia' and not session_id:
                     self.send_json_error(400, "Missing session_id for remote image")
                     return
                 
@@ -911,21 +1226,24 @@ class FigureStudyHandler(http.server.SimpleHTTPRequestHandler):
                     self.send_json_error(500, f"Eagle library not found at {IMAGES_DIR}")
                     return
                 
-                # Derive a stable ID from the Wikimedia page id to avoid duplicates on repeated starring.
+                # Derive a stable ID from the provider item id to avoid duplicates on repeated starring.
                 remote_id = str(image_data.get('id', ''))
-                page_id = remote_id.split(':', 1)[1] if remote_id.startswith('wikimedia:') and ':' in remote_id else None
+                page_id = remote_id.split(':', 1)[1] if ':' in remote_id else None
                 if not page_id:
                     self.send_json_error(400, "Invalid remote image id")
                     return
 
                 try:
-                    wikimedia_folder_id = get_or_create_eagle_folder_id("Wikimedia Imports")
+                    import_folder_name = "Wikimedia Imports" if remote_source == 'wikimedia' else "Unsplash Imports"
+                    import_folder_tag = "wikimedia" if remote_source == 'wikimedia' else "unsplash"
+                    provider_label = "Wikimedia Commons" if remote_source == 'wikimedia' else "Unsplash"
+                    import_folder_id = get_or_create_eagle_folder_id(import_folder_name)
                 except Exception as e:
                     self.send_json_error(500, f"Could not create/find Eagle folder: {str(e)}")
                     return
 
                 # Eagle item IDs are typically short A-Z0-9 strings; use a deterministic one.
-                new_folder_id = stable_eagle_id(f"wikimedia:{page_id}")
+                new_folder_id = stable_eagle_id(f"{remote_source}:{page_id}")
                 new_folder_name = f"{new_folder_id}.info"
                 new_folder = IMAGES_DIR / new_folder_name
 
@@ -935,28 +1253,40 @@ class FigureStudyHandler(http.server.SimpleHTTPRequestHandler):
                         'success': True,
                         'favorited': True,
                         'eagle_folder': new_folder_name,
-                        'eagle_folder_id': wikimedia_folder_id,
+                        'eagle_folder_id': import_folder_id,
                         'already_imported': True
                     })
                     return
 
                 new_folder.mkdir(parents=True, exist_ok=True)
-                
-                # Copy image file from cache
-                source_path_match = image_data.get('image_path', '').split(f'/api/remote-image/{session_id}/')
-                if len(source_path_match) < 2:
-                    self.send_json_error(400, "Invalid image path")
-                    return
-                
-                source_filename = urllib.parse.unquote(source_path_match[1])
-                # Prevent path traversal
-                if Path(source_filename).name != source_filename:
-                    self.send_json_error(400, "Invalid source filename")
-                    return
-                source_path = REMOTE_CACHE_DIR / session_id / source_filename
-                
-                if not source_path.exists():
-                    self.send_json_error(404, "Source image not found")
+
+                source_path: Optional[Path] = None
+                source_suffix = '.jpg'
+
+                if remote_source == 'wikimedia':
+                    source_path_match = image_data.get('image_path', '').split(f'/api/remote-image/{session_id}/')
+                    if len(source_path_match) < 2:
+                        self.send_json_error(400, "Invalid image path")
+                        return
+
+                    source_filename = urllib.parse.unquote(source_path_match[1])
+                    if Path(source_filename).name != source_filename:
+                        self.send_json_error(400, "Invalid source filename")
+                        return
+                    source_path = REMOTE_CACHE_DIR / session_id / source_filename
+                    if not source_path.exists():
+                        self.send_json_error(404, "Source image not found")
+                        return
+                    source_suffix = source_path.suffix.lower() or '.jpg'
+                elif remote_source == 'unsplash':
+                    image_url = str(image_data.get('image_path') or '').strip()
+                    if not image_url:
+                        self.send_json_error(400, "Missing Unsplash image URL")
+                        return
+                    parsed = urllib.parse.urlparse(image_url)
+                    source_suffix = Path(parsed.path).suffix.lower() or '.jpg'
+                else:
+                    self.send_json_error(400, f"Unsupported remote source: {remote_source}")
                     return
                 
                 # Use Eagle-style naming convention:
@@ -967,9 +1297,32 @@ class FigureStudyHandler(http.server.SimpleHTTPRequestHandler):
                 attribution_url = image_data.get('attribution_url', '')
 
                 # Copy to Eagle library
-                dest_filename = f"{eagle_name}{source_path.suffix.lower()}"
+                dest_filename = f"{eagle_name}{source_suffix}"
                 dest_path = new_folder / dest_filename
-                shutil.copy2(source_path, dest_path)
+                if remote_source == 'wikimedia':
+                    shutil.copy2(source_path, dest_path)
+                else:
+                    if not download_file(str(image_data.get('image_path')), dest_path):
+                        self.send_json_error(502, "Failed to download image from Unsplash")
+                        return
+
+                    download_location = str(image_data.get('download_location') or '').strip()
+                    if download_location:
+                        try:
+                            ack_req = urllib.request.Request(
+                                download_location,
+                                headers={
+                                    'Authorization': f"Client-ID {str(CONFIG.get('unsplash_access_key') or '').strip()}",
+                                    'Accept-Version': 'v1',
+                                    'Accept': 'application/json',
+                                    'User-Agent': USER_AGENT
+                                }
+                            )
+                            with urllib.request.urlopen(ack_req, timeout=10):
+                                pass
+                        except Exception:
+                            # Best-effort tracking endpoint; failure should not block saving.
+                            pass
                 
                 # Create Eagle thumbnail if possible
                 thumbnail_path = new_folder / f"{eagle_name}_thumbnail.png"
@@ -986,7 +1339,7 @@ class FigureStudyHandler(http.server.SimpleHTTPRequestHandler):
                 if not wrote_thumbnail:
                     # Best-effort: if we have a cached thumbnail and it's already PNG, copy it into place.
                     thumb_path_data = image_data.get('thumbnail_path', '')
-                    if thumb_path_data:
+                    if remote_source == 'wikimedia' and thumb_path_data:
                         thumb_match = thumb_path_data.split(f'/api/remote-image/{session_id}/')
                         if len(thumb_match) >= 2:
                             thumb_filename = urllib.parse.unquote(thumb_match[1])
@@ -997,16 +1350,28 @@ class FigureStudyHandler(http.server.SimpleHTTPRequestHandler):
                 
                 # Create metadata.json with favorite tag
                 attribution_url = image_data.get('attribution_url', '')
+                attribution_name = str(image_data.get('attribution_name') or '').strip()
+                attribution_username = str(image_data.get('attribution_username') or '').strip()
+                credit_line = ""
+                if remote_source == 'unsplash':
+                    if attribution_name and attribution_username:
+                        credit_line = f"Photo by {attribution_name} (@{attribution_username}) on Unsplash"
+                    elif attribution_name:
+                        credit_line = f"Photo by {attribution_name} on Unsplash"
+                    else:
+                        credit_line = "Photo on Unsplash"
                 annotation_parts = [
-                    "Imported from Wikimedia Commons" + (f"\nOriginal: {original_title}" if original_title else "")
+                    f"Imported from {provider_label}" + (f"\nOriginal: {original_title}" if original_title else "")
                 ]
+                if credit_line:
+                    annotation_parts.append(credit_line)
                 metadata = {
                     'id': new_folder_id,
                     'name': eagle_name,
                     'size': dest_path.stat().st_size,
                     'ext': dest_path.suffix.lstrip('.'),
-                    'tags': ['study-favorite', 'wikimedia'],
-                    'folders': [wikimedia_folder_id],
+                    'tags': ['study-favorite', import_folder_tag],
+                    'folders': [import_folder_id],
                     'isDeleted': False,
                     'url': attribution_url or '',
                     'annotation': "\n".join(annotation_parts),
@@ -1022,13 +1387,13 @@ class FigureStudyHandler(http.server.SimpleHTTPRequestHandler):
                 with open(metadata_file, 'w', encoding='utf-8') as f:
                     json.dump(metadata, f, ensure_ascii=False, indent=2)
                 
-                print(f"[Favorite] Copied Wikimedia image to Eagle library: {new_folder_id}")
+                print(f"[Favorite] Copied {provider_label} image to Eagle library: {new_folder_id}")
                 
                 self.send_json_response({
                     'success': True,
                     'favorited': True,
                     'eagle_folder': new_folder_name,
-                    'eagle_folder_id': wikimedia_folder_id
+                    'eagle_folder_id': import_folder_id
                 })
                 
             elif folder_name:

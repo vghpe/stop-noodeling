@@ -710,8 +710,9 @@
             <div class="button-group">
                 <button data-source="local" class="selected">Local Library</button>
                 <button data-source="wikimedia">Wikimedia Photos</button>
+                <button data-source="unsplash">Unsplash People</button>
             </div>
-            <div class="settings-hint">Wikimedia pulls random photos and clears cache after the session.</div>
+            <div class="settings-hint">Wikimedia and Unsplash use remote photos. Wikimedia cache is cleared after the session.</div>
         </div>
         
         <div class="settings-group">
@@ -934,11 +935,13 @@
         
         async function startSession() {
             try {
-                const isRemoteSource = state.source === 'wikimedia';
+                const isRemoteSource = state.source !== 'local';
                 const buttonText = isRemoteSource ? 'Fetching images...' : 'Loading...';
-                const overlayMessage = isRemoteSource
-                    ? `Fetching initial batch (~10s).\nMore photos load safely in the background until ${state.count} are ready.`
-                    : 'Loading...';
+                const overlayMessage = !isRemoteSource
+                    ? 'Loading...'
+                    : state.source === 'wikimedia'
+                        ? `Fetching initial batch (~10s).\nMore photos load safely in the background until ${state.count} are ready.`
+                        : 'Fetching Unsplash people photos...';
                 document.getElementById('start-button').textContent = buttonText;
 
                 // If the first fetch takes a while, show a spinner overlay.
@@ -949,7 +952,7 @@
                 await cleanupRemoteSessionIfNeeded();
 
                 const endpoint = isRemoteSource
-                    ? `/api/remote-session?count=${state.count}&source=wikimedia`
+                    ? `/api/remote-session?count=${state.count}&source=${encodeURIComponent(state.source)}`
                     : `/api/session?count=${state.count}&practice_type=${state.practiceType}`;
                 
                 const response = await fetch(endpoint);
@@ -1329,9 +1332,9 @@
                     updateFavoriteButton(isFullscreen);
                     
                     if (image.is_remote && data.favorited) {
-                        console.log(`[Favorite] Saved Wikimedia image to Eagle library: ${data.eagle_folder}`);
+                        console.log(`[Favorite] Saved remote image to Eagle library: ${data.eagle_folder}`);
                         if (!data.already_imported) {
-                            alert('Saved to Eagle: Wikimedia Imports');
+                            alert('Saved to Eagle imports');
                         }
                     }
                 }

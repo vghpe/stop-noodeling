@@ -36,6 +36,7 @@ temp/
 config.json
 .env
 deploy.sh
+README-pi.md
 
 # animation exports
 blog-animation/

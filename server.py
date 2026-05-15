@@ -1216,9 +1216,9 @@ class FigureStudyHandler(http.server.SimpleHTTPRequestHandler):
             if is_remote and image_data:
                 # Favoriting a remote image - copy it to Eagle library
                 session_id = data.get('session_id')
-                remote_source = str(image_data.get('source', 'wikimedia'))
+                remote_source = str(image_data.get('source', 'wikimedia')).lower()
                 if remote_source == 'wikimedia' and not session_id:
-                    self.send_json_error(400, "Missing session_id for remote image")
+                    self.send_json_error(400, "Missing session_id for Wikimedia image. Session may have been cleared.")
                     return
                 
                 # Ensure Eagle images directory exists
@@ -1248,7 +1248,23 @@ class FigureStudyHandler(http.server.SimpleHTTPRequestHandler):
                 new_folder = IMAGES_DIR / new_folder_name
 
                 if new_folder.exists():
-                    # Already imported
+                    # Already imported - but verify it's in the correct folder
+                    metadata_file = new_folder / 'metadata.json'
+                    if metadata_file.exists():
+                        try:
+                            with open(metadata_file, 'r', encoding='utf-8') as f:
+                                existing_metadata = json.load(f)
+                            # Check if the image is properly assigned to the import folder
+                            current_folders = existing_metadata.get('folders', [])
+                            if import_folder_id not in current_folders:
+                                # Add the import folder reference if missing
+                                existing_metadata['folders'] = list(set(current_folders + [import_folder_id]))
+                                with open(metadata_file, 'w', encoding='utf-8') as f:
+                                    json.dump(existing_metadata, f, ensure_ascii=False, indent=2)
+                                print(f"[Favorite] Updated existing image folder reference: {new_folder_id}")
+                        except Exception as e:
+                            print(f"[Warning] Could not verify/update existing image metadata: {e}")
+                    
                     self.send_json_response({
                         'success': True,
                         'favorited': True,
@@ -1387,7 +1403,12 @@ class FigureStudyHandler(http.server.SimpleHTTPRequestHandler):
                 with open(metadata_file, 'w', encoding='utf-8') as f:
                     json.dump(metadata, f, ensure_ascii=False, indent=2)
                 
-                print(f"[Favorite] Copied {provider_label} image to Eagle library: {new_folder_id}")
+                print(f"[Favorite] Successfully copied {provider_label} image to Eagle library:")
+                print(f"  - Folder ID: {new_folder_id}")
+                print(f"  - Folder name: {new_folder_name}")
+                print(f"  - Parent folder: {import_folder_name} (ID: {import_folder_id})")
+                print(f"  - Tags: {metadata.get('tags')}")
+                print(f"  - Location: {new_folder}")
                 
                 self.send_json_response({
                     'success': True,
@@ -1512,8 +1533,8 @@ def main():
     except Exception as e:
         print(f"Warning: could not start remote cache reaper: {e}")
     
+    socketserver.TCPServer.allow_reuse_address = True
     with socketserver.TCPServer(("", PORT), FigureStudyHandler) as httpd:
-        import socket
         hostname = socket.gethostname()
         local_ip = socket.gethostbyname(hostname)
         

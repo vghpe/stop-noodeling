@@ -1117,11 +1117,13 @@
         }
         
         function startTimer() {
+            clearInterval(state.timerInterval);
             state.startTime = Date.now();
             state.timerInterval = setInterval(updateTimer, 100);
         }
         
         function updateTimer() {
+            if (state.isPaused) return;
             const elapsed = Date.now() - state.startTime - state.pausedTime;
             const remaining = state.duration * 1000 - elapsed;
             const progress = Math.max(0, Math.min(100, (remaining / (state.duration * 1000)) * 100));
@@ -1157,6 +1159,7 @@
         function resumeTimer() {
             state.isPaused = false;
             state.pausedTime += Date.now() - state.pauseStartTime;
+            clearInterval(state.timerInterval);
             state.timerInterval = setInterval(updateTimer, 100);
             document.getElementById('pause-button').style.display = 'flex';
             document.getElementById('play-button').style.display = 'none';
@@ -1314,9 +1317,16 @@
                     // Remote image - send full data to copy to Eagle library
                     requestBody.image_data = image;
                     requestBody.session_id = state.remoteSessionId;
+                    console.log('[Favorite] Sending remote image with:', {
+                        is_remote: requestBody.is_remote,
+                        image_id: image.id,
+                        source: image.source,
+                        session_id: state.remoteSessionId
+                    });
                 } else {
                     // Local image - just send folder
                     requestBody.folder = image.folder;
+                    console.log('[Favorite] Sending local image:', image.folder);
                 }
                 
                 const response = await fetch('/api/favorite', {
@@ -1334,9 +1344,12 @@
                     if (image.is_remote && data.favorited) {
                         console.log(`[Favorite] Saved remote image to Eagle library: ${data.eagle_folder}`);
                         if (!data.already_imported) {
-                            alert('Saved to Eagle imports');
+                            alert('✓ Saved to Eagle imports');
                         }
                     }
+                } else {
+                    console.error('Favorite failed:', data.error);
+                    alert(`Could not save favorite: ${data.error}`);
                 }
             } catch (error) {
                 console.error('Error toggling favorite:', error);

@@ -8,6 +8,7 @@ import http.server
 import socketserver
 import json
 import os
+import re
 import random
 import shutil
 import urllib.parse
@@ -23,10 +24,17 @@ from concurrent.futures import ThreadPoolExecutor, as_completed, wait, FIRST_COM
 from pathlib import Path
 from typing import List, Dict, Optional, Tuple, Deque, Set
 
+from http.cookiejar import MozillaCookieJar
+
 try:
     from PIL import Image  # type: ignore
 except Exception:
     Image = None
+
+try:
+    from bs4 import BeautifulSoup as _BeautifulSoup  # type: ignore
+except ImportError:
+    _BeautifulSoup = None
 
 # Configuration
 def load_config():
@@ -80,6 +88,13 @@ REMOTE_SESSIONS: Dict[str, Dict[str, object]] = {}
 REMOTE_SESSIONS_LOCK = threading.Lock()
 EAGLE_METADATA_LOCK = threading.Lock()
 
+# Croquis Café – optional cookies file for subscription access
+_croquis_cookies_raw = CONFIG.get('croquis_cookies')
+CROQUIS_COOKIES_FILE: Optional[Path] = Path(_croquis_cookies_raw).expanduser() if _croquis_cookies_raw else None
+if CROQUIS_COOKIES_FILE and not CROQUIS_COOKIES_FILE.exists():
+    print(f"Warning: croquis_cookies file not found: {CROQUIS_COOKIES_FILE}")
+    CROQUIS_COOKIES_FILE = None
+
 # Remote cache retention
 # - TTL is a safety net: sessions normally clean up when the client requests it
 # - We use the remote session directory mtime as the source of truth and "touch"
@@ -116,6 +131,32 @@ UNSPLASH_QUERY_VARIANTS = (
     'lifestyle portrait',
     'people portrait'
 )
+
+CROQUIS_MODELS: List[str] = [
+    "aaron","alfie","alice","allyson","alora","amarutta","amedea","ameeka",
+    "anais","anderson","andrew","angela","angelique","arcana","artistic-physique",
+    "astrid","astrid-and-flora","aubrey","august","bailey","barbara","beatrice",
+    "bebe","bella","bella-donna","brie","britagne","brynna","caroline","catlin",
+    "chelsea-jo","chelsey","clara","connor","courtney","cwen","cwen-and-joe",
+    "dan","daphne","david","denisa","dessa","dwayne","elena","emily","emma-grace",
+    "erin","esmeralda","felicia","flora","flower-jones","gabrielle","gabrielle-dan",
+    "grace","greg","hannah-jay","heather","heff","helen","helen-luke","helen-troy",
+    "ivy","izaora","izzy","january","jaynie","jazmine","jennifer","jessamyne",
+    "jessa-ray","jessica","jessica-dawn","jhene","joe","johana","john","jorgie",
+    "joseph","juliet","kammeron","karma","katarina","katlin","kay","kayla",
+    "kaylee","keira-grant","keira-leilani","keith","kendell","kerri","kevin",
+    "kitty","kris","kristine","krystina-marie","lauren","laurent","lavivie",
+    "lea-deru","lea-pivin","lea-zoe","lilith","lisa","lizzy-lamb","lola","luke",
+    "madeline","madison","madison-oakley","manu","margaret","marina","mark",
+    "mary","masha","melissa","melody","mel-shola","melvin","meredith-rose",
+    "mike","mikym","monique","natasha","nathan","neil","nika","nova-amour",
+    "olivier","parker","pepper","rachel-lilly","ralph","raven","regina","rhus",
+    "riya","roarie","rose","roseanne","rose-of-venus","roxanne","ruby",
+    "ryeland-marie","sage","samantha","sarah","sarah-b","sarah-j","saturn",
+    "selva","silvy","simone","stephen","sunshine","tae","tamara","taylor",
+    "thomas","tiffany","tigger","tom","toniann","unique","vex-voir","vincent",
+    "violet-pixie","vivian","wendy","willow","woolphie","xaina","yohoi","yuji","zoe",
+]
 
 
 def now_ms() -> int:
@@ -833,6 +874,285 @@ def fetch_wikimedia_photos_initial(count: int, session_id: str, session_dir: Pat
     
     return images
 
+# ---------------------------------------------------------------------------
+# Croquis Café source
+# ---------------------------------------------------------------------------
+
+CROQUIS_CDN = "cdn.croquis.cafe"
+CROQUIS_MAX_LONG_EDGE = 2048  # target: largest variant whose long edge ≤ this
+
+
+def get_croquis_opener():
+    """Return a urllib opener with croquis.cafe cookies, or None if not configured."""
+    if CROQUIS_COOKIES_FILE is None:
+        return None
+    jar = MozillaCookieJar(str(CROQUIS_COOKIES_FILE))
+    try:
+        jar.load(ignore_discard=True, ignore_expires=True)
+    except Exception as e:
+        print(f"[Croquis] Warning: could not load cookies: {e}")
+        return None
+    opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
+    opener.addheaders = [
+        ("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:150.0) Gecko/20100101 Firefox/150.0"),
+        ("Referer", "https://croquis.cafe/"),
+    ]
+    return opener
+
+
+def _pick_best_croquis_url(variants: Dict[str, Tuple[int, int]]) -> str:
+    """Pick the URL whose long edge is ≤ CROQUIS_MAX_LONG_EDGE and is maximised."""
+    cap = CROQUIS_MAX_LONG_EDGE
+    below = {url: max(w, h) for url, (w, h) in variants.items() if max(w, h) <= cap}
+    if below:
+        return max(below, key=below.__getitem__)
+    # All variants exceed cap — return the smallest one
+    return min(variants, key=lambda u: max(variants[u]))
+
+
+def scrape_croquis_model_urls(model_slug: str, opener) -> List[str]:
+    """
+    Scrape a model gallery page and return one best-size URL per unique image.
+    Only size-suffixed CDN variants are collected; originals (no suffix) are skipped.
+    """
+    page_url = f"https://croquis.cafe/image-cats/fine-arts-poses/?croq_model_name={urllib.parse.quote(model_slug)}"
+    try:
+        with opener.open(urllib.request.Request(page_url), timeout=15) as resp:
+            page_html = resp.read().decode("utf-8", errors="replace")
+    except Exception as e:
+        print(f"[Croquis] Scrape failed for {model_slug}: {e}")
+        return []
+
+    raw_urls: Set[str] = set()
+    if _BeautifulSoup is not None:
+        soup = _BeautifulSoup(page_html, "html.parser")
+        gallery = soup.find("div", class_="gallery") or soup
+        for tag in gallery.find_all(True):
+            for attr in ("src", "data-src", "data-full-image", "href"):
+                val = tag.get(attr, "")
+                if CROQUIS_CDN in val and val.endswith((".jpg", ".jpeg", ".png", ".webp")):
+                    raw_urls.add(val)
+            for part in tag.get("srcset", "").split(","):
+                tokens = part.strip().split()
+                if tokens and CROQUIS_CDN in tokens[0]:
+                    raw_urls.add(tokens[0])
+    else:
+        # Fallback: regex scan + exclude obvious site-chrome filenames
+        for m in re.finditer(
+            r'https://cdn\.croquis\.cafe[^\s"\'>]+\.(?:jpg|jpeg|png|webp)', page_html
+        ):
+            url = m.group(0)
+            fname = url.split("/")[-1].lower()
+            if not any(kw in fname for kw in ("logo", "favicon", "icon", "cropped-croquis")):
+                raw_urls.add(url)
+
+    # Group size-suffixed variants by their base image
+    size_re = re.compile(r'-(\d+)x(\d+)(\.[^.]+)$')
+    groups: Dict[str, Dict[str, Tuple[int, int]]] = {}  # base -> {sized_url: (w, h)}
+    for url in raw_urls:
+        m = size_re.search(url)
+        if not m:
+            continue  # skip originals (no suffix)
+        w, h = int(m.group(1)), int(m.group(2))
+        base = size_re.sub(r'\3', url)  # strip -WxH
+        groups.setdefault(base, {})[url] = (w, h)
+
+    return [_pick_best_croquis_url(variants) for variants in groups.values()]
+
+
+def download_croquis_image(
+    url: str, session_dir: Path, session_id: str, opener
+) -> Optional[dict]:
+    """Download one croquis image to the session cache. Returns an image dict or None."""
+    filename = url.split("/")[-1]
+    dest = session_dir / filename
+    try:
+        with opener.open(urllib.request.Request(url), timeout=30) as resp:
+            if resp.status != 200:
+                print(f"[Croquis] HTTP {resp.status} for {filename}")
+                return None
+            dest.write_bytes(resp.read())
+    except Exception as e:
+        print(f"[Croquis] Download failed {filename}: {e}")
+        return None
+
+    # Clean display name: strip size suffix from stem
+    name = re.sub(r'-\d+x\d+$', '', dest.stem)
+    return {
+        'id': f"croquis:{filename}",
+        'name': name,
+        'image_path': f"/api/remote-image/{session_id}/{urllib.parse.quote(filename)}",
+        'thumbnail_path': None,
+        'tags': [],
+        'folder': None,
+        'is_remote': True,
+        'source': 'croquis',
+        'attribution_url': 'https://croquis.cafe/',
+    }
+
+
+def fetch_croquis_photos_background(
+    count: int, session_id: str, session_dir: Path, opener
+):
+    """Continue downloading croquis images in background until count is reached."""
+    try:
+        with REMOTE_SESSIONS_LOCK:
+            session = REMOTE_SESSIONS.get(session_id)
+            if not session:
+                return
+            images = session['images']  # shared list
+            pool: List[str] = session['_pool']  # remaining URLs; only this thread pops
+
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            pending: Dict = {}
+
+            def _submit():
+                if not pool:
+                    return False
+                url = pool.pop(0)
+                pending[executor.submit(
+                    download_croquis_image, url, session_dir, session_id, opener
+                )] = url
+                return True
+
+            # Prime the pool
+            while len(pending) < 8:
+                with REMOTE_SESSIONS_LOCK:
+                    if len(images) + len(pending) >= count:
+                        break
+                if not _submit():
+                    break
+
+            while pending:
+                done, _ = wait(list(pending.keys()), return_when=FIRST_COMPLETED, timeout=30)
+                if not done:
+                    break
+                for fut in list(done):
+                    pending.pop(fut, None)
+                    result = fut.result()
+                    with REMOTE_SESSIONS_LOCK:
+                        if session_id not in REMOTE_SESSIONS:
+                            return
+                        if result and len(images) < count:
+                            images.append(result)
+                    with REMOTE_SESSIONS_LOCK:
+                        current = len(images)
+                    if current >= count or not pool:
+                        continue
+                    _submit()
+
+        with REMOTE_SESSIONS_LOCK:
+            if session_id in REMOTE_SESSIONS:
+                REMOTE_SESSIONS[session_id]['fetching'] = False
+                print(f"[Croquis Background] Done: {len(images)} images")
+    except Exception as e:
+        print(f"[Croquis Background] Error: {e}")
+        with REMOTE_SESSIONS_LOCK:
+            if session_id in REMOTE_SESSIONS:
+                REMOTE_SESSIONS[session_id]['fetching'] = False
+
+
+def fetch_croquis_photos_initial(
+    count: int, session_id: str, session_dir: Path
+) -> List[dict]:
+    """
+    Scrape random model pages to build a URL pool, download an initial batch
+    synchronously, then hand the rest to a background thread.
+    """
+    opener = get_croquis_opener()
+    if opener is None:
+        raise RuntimeError(
+            "Croquis cookies not configured. Add 'croquis_cookies' to config.json."
+        )
+
+    n_models = max(3, (count // 15) + 2)
+    chosen = random.sample(CROQUIS_MODELS, min(n_models, len(CROQUIS_MODELS)))
+    print(f"[Croquis] Scraping {len(chosen)} models: {chosen}")
+
+    # Scrape all models in parallel, staggered by 0.5s to avoid a burst
+    def _scrape_staggered(args: tuple) -> List[str]:
+        idx, slug = args
+        if idx > 0:
+            time.sleep(idx * 0.5)
+        return scrape_croquis_model_urls(slug, opener)
+
+    pool: List[str] = []
+    with ThreadPoolExecutor(max_workers=len(chosen)) as scrape_ex:
+        for urls in scrape_ex.map(_scrape_staggered, enumerate(chosen)):
+            pool.extend(urls)
+
+    if not pool:
+        raise RuntimeError(
+            "No images found from Croquis \u2014 check cookies and network access."
+        )
+
+    random.shuffle(pool)
+    pool = pool[: count * 2]  # cap pool; plenty of variety
+    print(f"[Croquis] Pool: {len(pool)} URLs, targeting {count}")
+
+    min_initial = min(3, count)
+    images: List[dict] = []
+
+    # Register session early so the background thread can find it
+    with REMOTE_SESSIONS_LOCK:
+        REMOTE_SESSIONS[session_id] = {
+            'path': str(session_dir),
+            'created_at': time.time(),
+            'images': images,
+            '_pool': pool,
+            'target_count': count,
+            'fetching': True,
+        }
+
+    # Download initial batch synchronously
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        pending: Dict = {}
+
+        def _submit_initial():
+            if not pool:
+                return False
+            url = pool.pop(0)
+            pending[executor.submit(
+                download_croquis_image, url, session_dir, session_id, opener
+            )] = url
+            return True
+
+        for _ in range(min(8, len(pool))):
+            _submit_initial()
+
+        while pending and len(images) < min_initial:
+            done, _ = wait(list(pending.keys()), return_when=FIRST_COMPLETED, timeout=15)
+            if not done:
+                break
+            for fut in list(done):
+                pending.pop(fut, None)
+                result = fut.result()
+                if result:
+                    images.append(result)
+                if len(images) < min_initial:
+                    _submit_initial()
+
+        # Cancel remaining futures; background thread will pick up from the pool
+        for fut in list(pending.keys()):
+            fut.cancel()
+
+    fetching = len(images) < count and bool(pool)
+    with REMOTE_SESSIONS_LOCK:
+        if session_id in REMOTE_SESSIONS:
+            REMOTE_SESSIONS[session_id]['fetching'] = fetching
+
+    if fetching:
+        thread = threading.Thread(
+            target=fetch_croquis_photos_background,
+            args=(count, session_id, session_dir, opener),
+            daemon=True,
+        )
+        thread.start()
+
+    print(f"[Croquis] Returning {len(images)} initial images")
+    return images
+
+
 class FigureStudyHandler(http.server.SimpleHTTPRequestHandler):
     """HTTP request handler for Stop Noodling"""
     
@@ -1017,8 +1337,39 @@ class FigureStudyHandler(http.server.SimpleHTTPRequestHandler):
         source = params.get('source', ['wikimedia'])[0]
         query = params.get('query', [''])[0]
 
-        if source not in ('wikimedia', 'unsplash'):
+        if source not in ('wikimedia', 'unsplash', 'croquis'):
             self.send_json_error(400, f"Unsupported source: {source}")
+            return
+
+        if source == 'croquis':
+            cleanup_orphaned_remote_cache()
+            ensure_remote_cache_dir()
+            session_id = uuid.uuid4().hex
+            session_dir = REMOTE_CACHE_DIR / session_id
+            session_dir.mkdir(parents=True, exist_ok=True)
+            touch_remote_cache_session(session_id)
+            try:
+                images = fetch_croquis_photos_initial(count, session_id, session_dir)
+                elapsed_time = time.time() - start_time
+                if not images:
+                    cleanup_remote_session(session_id)
+                    self.send_json_error(500, "No images found from Croquis")
+                    return
+                print(f"[Performance] Croquis returned {len(images)} initial images in {elapsed_time:.3f}s")
+                self.send_json_response({
+                    'success': True,
+                    'images': images,
+                    'total': len(images),
+                    'source': 'croquis',
+                    'session_id': session_id,
+                    'fetching': REMOTE_SESSIONS.get(session_id, {}).get('fetching', False),
+                })
+            except RuntimeError as e:
+                cleanup_remote_session(session_id)
+                self.send_json_error(503, str(e))
+            except Exception as e:
+                cleanup_remote_session(session_id)
+                self.send_json_error(500, f"Error creating Croquis session: {str(e)}")
             return
 
         if source == 'unsplash':
@@ -1217,8 +1568,8 @@ class FigureStudyHandler(http.server.SimpleHTTPRequestHandler):
                 # Favoriting a remote image - copy it to Eagle library
                 session_id = data.get('session_id')
                 remote_source = str(image_data.get('source', 'wikimedia')).lower()
-                if remote_source == 'wikimedia' and not session_id:
-                    self.send_json_error(400, "Missing session_id for Wikimedia image. Session may have been cleared.")
+                if remote_source in ('wikimedia', 'croquis') and not session_id:
+                    self.send_json_error(400, f"Missing session_id for {remote_source} image. Session may have been cleared.")
                     return
                 
                 # Ensure Eagle images directory exists
@@ -1234,9 +1585,12 @@ class FigureStudyHandler(http.server.SimpleHTTPRequestHandler):
                     return
 
                 try:
-                    import_folder_name = "Wikimedia Imports" if remote_source == 'wikimedia' else "Unsplash Imports"
-                    import_folder_tag = "wikimedia" if remote_source == 'wikimedia' else "unsplash"
-                    provider_label = "Wikimedia Commons" if remote_source == 'wikimedia' else "Unsplash"
+                    _src_map = {
+                        'wikimedia': ("Wikimedia Imports", "wikimedia", "Wikimedia Commons"),
+                        'croquis':   ("Croquis Caf\u00e9 Imports", "croquis", "Croquis Caf\u00e9"),
+                    }
+                    _sinfo = _src_map.get(remote_source, ("Unsplash Imports", "unsplash", "Unsplash"))
+                    import_folder_name, import_folder_tag, provider_label = _sinfo
                     import_folder_id = get_or_create_eagle_folder_id(import_folder_name)
                 except Exception as e:
                     self.send_json_error(500, f"Could not create/find Eagle folder: {str(e)}")
@@ -1279,7 +1633,7 @@ class FigureStudyHandler(http.server.SimpleHTTPRequestHandler):
                 source_path: Optional[Path] = None
                 source_suffix = '.jpg'
 
-                if remote_source == 'wikimedia':
+                if remote_source in ('wikimedia', 'croquis'):
                     source_path_match = image_data.get('image_path', '').split(f'/api/remote-image/{session_id}/')
                     if len(source_path_match) < 2:
                         self.send_json_error(400, "Invalid image path")
@@ -1315,7 +1669,7 @@ class FigureStudyHandler(http.server.SimpleHTTPRequestHandler):
                 # Copy to Eagle library
                 dest_filename = f"{eagle_name}{source_suffix}"
                 dest_path = new_folder / dest_filename
-                if remote_source == 'wikimedia':
+                if remote_source in ('wikimedia', 'croquis'):
                     shutil.copy2(source_path, dest_path)
                 else:
                     if not download_file(str(image_data.get('image_path')), dest_path):

@@ -38,6 +38,13 @@ config.json
 deploy.sh
 README-pi.md
 
+# Cookies / session credentials (never commit)
+*.cafe_cookies.txt
+cookies.txt
+
+# Remote image cache
+.remote_cache/
+
 # animation exports
 blog-animation/
 

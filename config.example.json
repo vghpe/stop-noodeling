@@ -3,5 +3,6 @@
   "library_path": "~/Pictures/Figure Drawing References.library",
   "unsplash_access_key": "YOUR_UNSPLASH_ACCESS_KEY",
   "unsplash_query": "people",
-  "note": "Copy this file to config.json and update with your actual paths. The config.json file is gitignored."
+  "croquis_cookies": "~/path/to/croquis.cafe_cookies.txt",
+  "note": "Copy this file to config.json and update with your actual paths. The config.json file is gitignored. croquis_cookies should point to a Netscape-format cookies file exported from your browser after logging in to croquis.cafe."
 }

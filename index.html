@@ -711,8 +711,9 @@
                 <button data-source="local" class="selected">Local Library</button>
                 <button data-source="wikimedia">Wikimedia Photos</button>
                 <button data-source="unsplash">Unsplash People</button>
+                <button data-source="croquis">Croquis Café</button>
             </div>
-            <div class="settings-hint">Wikimedia and Unsplash use remote photos. Wikimedia cache is cleared after the session.</div>
+            <div class="settings-hint">Wikimedia and Unsplash use remote photos. Wikimedia cache is cleared after the session. Croquis Café requires a valid cookies file configured on the server.</div>
         </div>
         
         <div class="settings-group">
@@ -941,7 +942,9 @@
                     ? 'Loading...'
                     : state.source === 'wikimedia'
                         ? `Fetching initial batch (~10s).\nMore photos load safely in the background until ${state.count} are ready.`
-                        : 'Fetching Unsplash people photos...';
+                        : state.source === 'croquis'
+                            ? `Fetching Croquis Caf\u00e9 photos\u2026\nScraping model pages then downloading in the background.`
+                            : 'Fetching Unsplash people photos...';
                 document.getElementById('start-button').textContent = buttonText;
 
                 // If the first fetch takes a while, show a spinner overlay.

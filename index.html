@@ -348,27 +348,21 @@
         }
         
         #fullscreen-toggle-button {
-            position: fixed;
-            bottom: 20px;
+            position: absolute;
+            top: 90px;
             right: 20px;
             width: 60px;
             height: 60px;
-            background: rgba(40, 44, 47, 0.8);
+            background: rgba(40, 44, 47, 0.85);
             border: 2px solid #5F544C;
             border-radius: 50%;
             cursor: pointer;
-            font-size: 1.8rem;
             display: flex;
             align-items: center;
             justify-content: center;
-            z-index: 100;
-            transition: all 0.3s;
+            transition: background 0.2s, border-color 0.2s, color 0.2s;
             color: #EAE6D3;
-        }
-        
-        #fullscreen-toggle-button.hidden {
-            transform: translateY(100px);
-            opacity: 0;
+            pointer-events: auto;
         }
         
         #fullscreen-toggle-button:active {
@@ -495,12 +489,30 @@
             overflow: hidden;
         }
         
+        #fullscreen-content {
+            position: absolute;
+            inset: 0;
+        }
+
         #fullscreen-review img {
+            position: absolute;
+            inset: 0;
             width: 100%;
             height: 100%;
             object-fit: contain;
             padding: 60px 20px;
             cursor: grab;
+        }
+
+        #threshold-review-canvas {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            padding: 60px 20px;
+            cursor: grab;
+            display: none;
         }
         
         #fullscreen-review img:active {
@@ -566,21 +578,21 @@
         }
         
         #fullscreen-review-toggle {
-            position: fixed;
-            top: 20px;
-            right: 160px;
+            position: absolute;
+            top: 90px;
+            right: 20px;
             width: 60px;
             height: 60px;
-            background: rgba(40, 44, 47, 0.8);
+            background: rgba(40, 44, 47, 0.85);
             border: 2px solid #5F544C;
             border-radius: 50%;
             cursor: pointer;
-            font-size: 1.8rem;
-            display: flex;
+            display: none;
             align-items: center;
             justify-content: center;
-            z-index: 2001;
+            transition: background 0.2s, border-color 0.2s, color 0.2s;
             color: #EAE6D3;
+            pointer-events: auto;
         }
         
         .loading {
@@ -594,6 +606,139 @@
             display: none !important;
         }
         
+        /* Threshold Controls — full-screen overlay with absolute children */
+        #threshold-controls {
+            position: fixed;
+            inset: 0;
+            z-index: 3000;
+            pointer-events: none;
+        }
+
+        #threshold-controls.hidden {
+            display: none !important;
+        }
+
+        #threshold-bar {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            padding: 8px 20px calc(20px + env(safe-area-inset-bottom, 0px)) 20px;
+            gap: 14px;
+            transition: background 0.2s;
+        }
+
+        #threshold-bar.active {
+            background: linear-gradient(to top, rgba(15, 17, 19, 0.55), transparent);
+            justify-content: flex-start;
+            pointer-events: auto;
+        }
+
+        #threshold-toggle-button {
+            width: 60px;
+            height: 60px;
+            background: rgba(40, 44, 47, 0.85);
+            border: 2px solid #5F544C;
+            border-radius: 50%;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #EAE6D3;
+            transition: background 0.2s, border-color 0.2s, color 0.2s;
+            pointer-events: auto;
+            flex-shrink: 0;
+        }
+
+        #threshold-toggle-button.active {
+            border-color: #4998AE;
+            color: #4998AE;
+        }
+
+        .no-fullscreen-support {
+            display: none !important;
+        }
+
+        #threshold-slider {
+            display: none;
+            flex: 1;
+            height: 44px;
+            cursor: pointer;
+            pointer-events: auto;
+            touch-action: pan-x;
+            -webkit-appearance: none;
+            appearance: none;
+            background: transparent;
+            outline: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        #threshold-slider:focus,
+        #threshold-slider:focus-visible {
+            outline: none;
+            box-shadow: none;
+        }
+
+        #threshold-bar.active #threshold-slider {
+            display: block;
+        }
+
+        #threshold-slider::-webkit-slider-runnable-track {
+            height: 2px;
+            border-radius: 1px;
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        #threshold-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 60px;
+            height: 60px;
+            background: radial-gradient(circle, #4998AE 11px, rgba(73,152,174,0) 12px);
+            border: none;
+            margin-top: -29px;
+            cursor: pointer;
+            outline: none;
+            box-shadow: none;
+        }
+
+        #threshold-slider::-moz-range-track {
+            height: 2px;
+            border-radius: 1px;
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        #threshold-slider::-moz-range-thumb {
+            width: 60px;
+            height: 60px;
+            background: radial-gradient(circle, #4998AE 11px, rgba(73,152,174,0) 12px);
+            border: none;
+            box-sizing: border-box;
+        }
+
+        #threshold-value-label {
+            display: none;
+            font-size: 0.8rem;
+            color: #9A9388;
+            min-width: 28px;
+            text-align: right;
+        }
+
+        #threshold-bar.active #threshold-value-label {
+            display: block;
+        }
+
+        #threshold-study-canvas {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+            user-select: none;
+            -webkit-user-select: none;
+            display: none;
+        }
+
         /* Phone layout: Bottom navigation */
         @media (max-width: 600px) {
             #image-container {
@@ -640,14 +785,6 @@
                 font-size: 1.5rem;
             }
             
-            #fullscreen-toggle-button {
-                bottom: 80px;
-                right: 15px;
-                width: 50px;
-                height: 50px;
-                font-size: 1.5rem;
-            }
-            
             #start-screen h1 {
                 font-size: 2rem;
             }
@@ -664,8 +801,9 @@
             /* Hide fullscreen buttons on phones - already fullscreen */
             #fullscreen-toggle-button,
             #fullscreen-review-toggle {
-                display: none;
+                display: none !important;
             }
+
         }
     </style>
 </head>
@@ -739,6 +877,7 @@
         <div id="timer-bar"></div>
         <div id="image-container">
             <img id="current-image" alt="Reference image">
+            <canvas id="threshold-study-canvas"></canvas>
         </div>
         <button id="favorite-button">☆</button>
         <div id="study-controls">
@@ -764,7 +903,6 @@
                 </div>
             </div>
         </div>
-        <button id="fullscreen-toggle-button" title="Toggle Fullscreen"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path></svg></button>
     </div>
     
     <!-- Review Screen -->
@@ -774,13 +912,32 @@
         <button id="new-session-button">New Session</button>
     </div>
     
+    <!-- Threshold Controls -->
+    <div id="threshold-controls" class="hidden">
+        <div id="threshold-bar">
+            <span id="threshold-value-label">128</span>
+            <input type="range" id="threshold-slider" min="1" max="255" value="128">
+            <button id="fullscreen-toggle-button" title="Toggle Fullscreen"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path></svg></button>
+            <button id="fullscreen-review-toggle" title="Toggle Fullscreen"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path></svg></button>
+            <button id="threshold-toggle-button" title="Toggle Threshold">
+                <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true">
+                    <circle cx="12" cy="12" r="9" fill="currentColor" opacity="0.2"/>
+                    <path d="M12 3a9 9 0 0 1 0 18V3z" fill="currentColor"/>
+                    <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/>
+                </svg>
+            </button>
+        </div>
+    </div>
+
     <!-- Fullscreen Review -->
     <div id="fullscreen-review">
         <button id="back-button"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg> Back</button>
         <button id="fullscreen-favorite-button">☆</button>
         <button id="fullscreen-lock-button" title="Lock pan/zoom" aria-pressed="false" aria-label="Lock pan and zoom"></button>
-        <button id="fullscreen-review-toggle" title="Toggle Fullscreen"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path></svg></button>
-        <img id="fullscreen-image" alt="Review image">
+        <div id="fullscreen-content">
+            <img id="fullscreen-image" alt="Review image">
+            <canvas id="threshold-review-canvas"></canvas>
+        </div>
     </div>
 
     <script>
@@ -804,7 +961,11 @@
             timerInterval: null,
             controlsVisible: true,
             reviewIndex: null,
-            fullscreenReviewLocked: false
+            fullscreenReviewLocked: false,
+            thresholdEnabled: false,
+            thresholdValue: 128,
+            _thresholdCache: { data: null, w: 0, h: 0 },
+            _thresholdDebounce: null
         };
         
         // DOM Elements
@@ -820,6 +981,13 @@
             setupStartScreen();
             setupStudyScreen();
             setupReviewScreen();
+            setupThresholdControls();
+            // Hide fullscreen buttons on platforms without Fullscreen API support (e.g. iOS Safari)
+            if (!document.fullscreenEnabled && !document.webkitFullscreenEnabled) {
+                document.querySelectorAll('#fullscreen-toggle-button, #fullscreen-review-toggle').forEach(btn => {
+                    btn.classList.add('no-fullscreen-support');
+                });
+            }
         });
 
         function showLoading(message) {
@@ -936,6 +1104,7 @@
         
         async function startSession() {
             try {
+                disableThreshold();
                 const isRemoteSource = state.source !== 'local';
                 const buttonText = isRemoteSource ? 'Fetching images...' : 'Loading...';
                 const overlayMessage = !isRemoteSource
@@ -1076,8 +1245,16 @@
         function displayCurrentImage() {
             const image = state.images[state.currentIndex];
             const img = document.getElementById('current-image');
-            
+            const canvas = document.getElementById('threshold-study-canvas');
+
+            state._thresholdCache = { data: null, w: 0, h: 0 };
+            img.style.display = '';
+            canvas.style.display = 'none';
             img.src = image.image_path;
+
+            if (state.thresholdEnabled) {
+                showThreshold(img, canvas);
+            }
             
             // Update counter with fetch status
             updateImageCounter();
@@ -1220,9 +1397,11 @@
             document.getElementById('pause-button').style.display = 'flex';
             document.getElementById('play-button').style.display = 'none';
             
+            disableThreshold();
+
             // Clear image to prevent flash on next session
             document.getElementById('current-image').src = '';
-            
+
             if (state.useFullscreen) {
                 exitFullscreen();
             }
@@ -1394,7 +1573,7 @@
             // Setup panzoom on fullscreen image
             const fullscreenImg = document.getElementById('fullscreen-image');
             const fullscreenContainer = document.getElementById('fullscreen-review');
-            const panzoomInstance = Panzoom(fullscreenImg, {
+            const panzoomInstance = Panzoom(document.getElementById('fullscreen-content'), {
                 maxScale: 6,
                 minScale: 1,
                 contain: 'outside',
@@ -1478,9 +1657,11 @@
             });
             
             document.getElementById('back-button').addEventListener('click', () => {
+                disableThreshold();
                 screens.fullscreen.style.display = 'none';
                 setFullscreenReviewLocked(false);
                 panzoomInstance.reset();
+                document.getElementById('threshold-controls').classList.add('hidden');
             });
             
             document.getElementById('fullscreen-favorite-button').addEventListener('click', () => {
@@ -1540,8 +1721,14 @@
         function showFullscreenReview(index) {
             state.reviewIndex = index;
             const image = state.images[index];
-            
-            document.getElementById('fullscreen-image').src = image.image_path;
+            const img = document.getElementById('fullscreen-image');
+            const canvas = document.getElementById('threshold-review-canvas');
+
+            state._thresholdCache = { data: null, w: 0, h: 0 };
+            img.style.display = '';
+            canvas.style.display = 'none';
+            img.src = image.image_path;
+
             if (typeof state.setFullscreenReviewLocked === 'function') {
                 state.setFullscreenReviewLocked(false);
             } else {
@@ -1550,6 +1737,13 @@
             updateFavoriteButton(true);
             updateFavoriteVisibility();
             screens.fullscreen.style.display = 'block';
+            document.getElementById('threshold-controls').classList.remove('hidden');
+            document.getElementById('fullscreen-toggle-button').style.display = 'none';
+            document.getElementById('fullscreen-review-toggle').style.display = 'flex';
+
+            if (state.thresholdEnabled) {
+                showThreshold(img, canvas);
+            }
         }
 
         async function cleanupRemoteSessionIfNeeded() {
@@ -1574,6 +1768,144 @@
         function showScreen(name) {
             Object.values(screens).forEach(screen => screen.style.display = 'none');
             screens[name].style.display = name === 'start' ? 'flex' : 'block';
+            const tc = document.getElementById('threshold-controls');
+            if (name === 'study') {
+                tc.classList.remove('hidden');
+                document.getElementById('fullscreen-toggle-button').style.display = '';
+                document.getElementById('fullscreen-review-toggle').style.display = 'none';
+            } else {
+                tc.classList.add('hidden');
+            }
+        }
+
+        // ---- Threshold Effect ----
+        function getActiveDisplayImage() {
+            if (screens.fullscreen.style.display === 'block') {
+                return document.getElementById('fullscreen-image');
+            }
+            if (screens.study.style.display === 'block') {
+                return document.getElementById('current-image');
+            }
+            return null;
+        }
+
+        function getActiveCanvas() {
+            if (screens.fullscreen.style.display === 'block') {
+                return document.getElementById('threshold-review-canvas');
+            }
+            if (screens.study.style.display === 'block') {
+                return document.getElementById('threshold-study-canvas');
+            }
+            return null;
+        }
+
+        function applyThresholdToCanvas(img, canvas) {
+            // First call for a given image: draw to canvas, cache original pixels, apply threshold
+            canvas.width = img.naturalWidth;
+            canvas.height = img.naturalHeight;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0);
+            try {
+                const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                state._thresholdCache = {
+                    data: new Uint8ClampedArray(imageData.data),
+                    w: canvas.width,
+                    h: canvas.height
+                };
+                const d = imageData.data;
+                const thr = state.thresholdValue;
+                for (let i = 0; i < d.length; i += 4) {
+                    const v = (0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]) >= thr ? 255 : 0;
+                    d[i] = v; d[i + 1] = v; d[i + 2] = v;
+                }
+                ctx.putImageData(imageData, 0, 0);
+                img.style.display = 'none';
+                canvas.style.display = 'block';
+            } catch (e) {
+                console.error('Threshold failed:', e);
+            }
+        }
+
+        function applyThresholdFromCache(canvas) {
+            // Slider path: copy cached pixels, threshold loop, putImageData — no I/O, no encoding
+            const cache = state._thresholdCache;
+            if (!cache.data) return;
+            const out = new Uint8ClampedArray(cache.data);
+            const thr = state.thresholdValue;
+            for (let i = 0; i < out.length; i += 4) {
+                const v = (0.299 * out[i] + 0.587 * out[i + 1] + 0.114 * out[i + 2]) >= thr ? 255 : 0;
+                out[i] = v; out[i + 1] = v; out[i + 2] = v;
+            }
+            canvas.getContext('2d').putImageData(new ImageData(out, cache.w, cache.h), 0, 0);
+        }
+
+        function refreshThreshold() {
+            if (!state.thresholdEnabled) return;
+            if (state._thresholdDebounce) cancelAnimationFrame(state._thresholdDebounce);
+            state._thresholdDebounce = requestAnimationFrame(() => {
+                state._thresholdDebounce = null;
+                const canvas = getActiveCanvas();
+                if (canvas && state._thresholdCache.data) {
+                    applyThresholdFromCache(canvas);
+                }
+            });
+        }
+
+        function showThreshold(img, canvas) {
+            if (img.complete && img.naturalWidth > 0) {
+                applyThresholdToCanvas(img, canvas);
+            } else {
+                img.addEventListener('load', () => applyThresholdToCanvas(img, canvas), { once: true });
+            }
+        }
+
+        function hideThreshold(img, canvas) {
+            canvas.style.display = 'none';
+            img.style.display = '';
+        }
+
+        function disableThreshold() {
+            if (!state.thresholdEnabled) return;
+            state.thresholdEnabled = false;
+            document.getElementById('threshold-toggle-button').classList.remove('active');
+            document.getElementById('threshold-bar').classList.remove('active');
+            state._thresholdCache = { data: null, w: 0, h: 0 };
+            const img = getActiveDisplayImage();
+            const canvas = getActiveCanvas();
+            if (img && canvas) hideThreshold(img, canvas);
+        }
+
+        function setupThresholdControls() {
+            document.getElementById('threshold-toggle-button').addEventListener('click', (e) => {
+                e.stopPropagation();
+                state.thresholdEnabled = !state.thresholdEnabled;
+                const btn = document.getElementById('threshold-toggle-button');
+                const bar = document.getElementById('threshold-bar');
+                const img = getActiveDisplayImage();
+                const canvas = getActiveCanvas();
+                if (state.thresholdEnabled) {
+                    btn.classList.add('active');
+                    bar.classList.add('active');
+                    state._thresholdCache = { data: null, w: 0, h: 0 };
+                    if (img && canvas) showThreshold(img, canvas);
+                } else {
+                    btn.classList.remove('active');
+                    bar.classList.remove('active');
+                    state._thresholdCache = { data: null, w: 0, h: 0 };
+                    if (img && canvas) hideThreshold(img, canvas);
+                }
+            });
+
+            document.getElementById('threshold-slider').addEventListener('input', (e) => {
+                e.stopPropagation();
+                state.thresholdValue = parseInt(e.target.value);
+                document.getElementById('threshold-value-label').textContent = state.thresholdValue;
+                refreshThreshold();
+            });
+
+            document.getElementById('threshold-slider').addEventListener('pointerup', (e) => {
+                e.target.blur();
+            });
         }
     </script>
 </body>

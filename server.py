@@ -61,6 +61,15 @@ def load_config():
     
     if os.getenv('STOP_NOODLING_LIBRARY_PATH'):
         config['library_path'] = Path(os.getenv('STOP_NOODLING_LIBRARY_PATH')).expanduser()
+
+    if os.getenv('STOP_NOODLING_CROQUIS_COOKIES'):
+        config['croquis_cookies'] = os.getenv('STOP_NOODLING_CROQUIS_COOKIES')
+
+    if os.getenv('STOP_NOODLING_CROQUIS_USERNAME'):
+        config['croquis_username'] = os.getenv('STOP_NOODLING_CROQUIS_USERNAME')
+
+    if os.getenv('STOP_NOODLING_CROQUIS_PASSWORD'):
+        config['croquis_password'] = os.getenv('STOP_NOODLING_CROQUIS_PASSWORD')
     
     # Auto-detect library path if not configured
     if not config['library_path']:
@@ -92,8 +101,11 @@ EAGLE_METADATA_LOCK = threading.Lock()
 _croquis_cookies_raw = CONFIG.get('croquis_cookies')
 CROQUIS_COOKIES_FILE: Optional[Path] = Path(_croquis_cookies_raw).expanduser() if _croquis_cookies_raw else None
 if CROQUIS_COOKIES_FILE and not CROQUIS_COOKIES_FILE.exists():
-    print(f"Warning: croquis_cookies file not found: {CROQUIS_COOKIES_FILE}")
-    CROQUIS_COOKIES_FILE = None
+    print(f"Warning: croquis_cookies file not found: {CROQUIS_COOKIES_FILE} (will attempt auto-login if credentials are configured)")
+_croquis_username_raw = CONFIG.get('croquis_username')
+CROQUIS_USERNAME: Optional[str] = str(_croquis_username_raw).strip() if _croquis_username_raw else None
+_croquis_password_raw = CONFIG.get('croquis_password')
+CROQUIS_PASSWORD: Optional[str] = str(_croquis_password_raw) if _croquis_password_raw else None
 
 # Remote cache retention
 # - TTL is a safety net: sessions normally clean up when the client requests it
@@ -880,11 +892,113 @@ def fetch_wikimedia_photos_initial(count: int, session_id: str, session_dir: Pat
 
 CROQUIS_CDN = "cdn.croquis.cafe"
 CROQUIS_MAX_LONG_EDGE = 2048  # target: largest variant whose long edge ≤ this
+CROQUIS_LOGIN_URL = "https://croquis.cafe/my-account/"
+CROQUIS_EXCLUDED_FILENAME_PARTS = (
+    "logo",
+    "favicon",
+    "icon",
+    "cropped-croquis",
+    "apple-touch",
+    "android-chrome",
+    "site-icon",
+)
+
+
+def _is_croquis_content_url(url: str) -> bool:
+    if CROQUIS_CDN not in url:
+        return False
+    lowered = url.lower()
+    if not lowered.endswith((".jpg", ".jpeg", ".png", ".webp")):
+        return False
+    filename = lowered.rsplit("/", 1)[-1]
+    return not any(part in filename for part in CROQUIS_EXCLUDED_FILENAME_PARTS)
+
+
+def _build_croquis_opener(jar: MozillaCookieJar):
+    opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
+    opener.addheaders = [
+        ("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:150.0) Gecko/20100101 Firefox/150.0"),
+        ("Referer", "https://croquis.cafe/"),
+    ]
+    return opener
+
+
+def croquis_auto_login_available() -> bool:
+    return bool(CROQUIS_COOKIES_FILE and CROQUIS_USERNAME and CROQUIS_PASSWORD)
+
+
+def refresh_croquis_cookies() -> Optional[object]:
+    """Log in to Croquis Café and persist a fresh cookie jar when credentials are configured."""
+    if not croquis_auto_login_available():
+        return None
+
+    jar = MozillaCookieJar(str(CROQUIS_COOKIES_FILE))
+    opener = _build_croquis_opener(jar)
+
+    try:
+        with opener.open(urllib.request.Request(CROQUIS_LOGIN_URL), timeout=30) as resp:
+            login_html = resp.read().decode("utf-8", errors="replace")
+    except Exception as e:
+        print(f"[Croquis] Auto-login setup failed: {e}")
+        return None
+
+    nonce_match = re.search(
+        r'name="woocommerce-login-nonce"\s+value="([^"]+)"', login_html
+    )
+    if not nonce_match:
+        print("[Croquis] Auto-login failed: login nonce not found")
+        return None
+
+    form_data = urllib.parse.urlencode({
+        "username": CROQUIS_USERNAME,
+        "password": CROQUIS_PASSWORD,
+        "rememberme": "forever",
+        "woocommerce-login-nonce": nonce_match.group(1),
+        "_wp_http_referer": "/my-account/",
+        "login": "Log in",
+    }).encode("utf-8")
+
+    request = urllib.request.Request(
+        CROQUIS_LOGIN_URL,
+        data=form_data,
+        headers={
+            "Content-Type": "application/x-www-form-urlencoded",
+            "Origin": "https://croquis.cafe",
+            "Referer": CROQUIS_LOGIN_URL,
+        },
+    )
+
+    try:
+        with opener.open(request, timeout=30) as resp:
+            response_html = resp.read().decode("utf-8", errors="replace")
+    except Exception as e:
+        print(f"[Croquis] Auto-login request failed: {e}")
+        return None
+
+    if not any(marker in response_html for marker in ("customer-logout", "Log out", "edit-account")):
+        print("[Croquis] Auto-login failed: login markers not found in response")
+        return None
+
+    try:
+        jar.save(ignore_discard=True, ignore_expires=True)
+    except Exception as e:
+        print(f"[Croquis] Auto-login succeeded but cookies could not be saved: {e}")
+        return None
+
+    print(f"[Croquis] Refreshed cookies at {CROQUIS_COOKIES_FILE}")
+    return opener
 
 
 def get_croquis_opener():
     """Return a urllib opener with croquis.cafe cookies, or None if not configured."""
     if CROQUIS_COOKIES_FILE is None:
+        return None
+    if not CROQUIS_COOKIES_FILE.exists():
+        if croquis_auto_login_available():
+            print("[Croquis] Cookies file missing; attempting automatic login")
+            refreshed = refresh_croquis_cookies()
+            if refreshed is not None:
+                return refreshed
         return None
     jar = MozillaCookieJar(str(CROQUIS_COOKIES_FILE))
     try:
@@ -892,12 +1006,7 @@ def get_croquis_opener():
     except Exception as e:
         print(f"[Croquis] Warning: could not load cookies: {e}")
         return None
-    opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
-    opener.addheaders = [
-        ("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:150.0) Gecko/20100101 Firefox/150.0"),
-        ("Referer", "https://croquis.cafe/"),
-    ]
-    return opener
+    return _build_croquis_opener(jar)
 
 
 def _pick_best_croquis_url(variants: Dict[str, Tuple[int, int]]) -> str:
@@ -930,11 +1039,11 @@ def scrape_croquis_model_urls(model_slug: str, opener) -> List[str]:
         for tag in gallery.find_all(True):
             for attr in ("src", "data-src", "data-full-image", "href"):
                 val = tag.get(attr, "")
-                if CROQUIS_CDN in val and val.endswith((".jpg", ".jpeg", ".png", ".webp")):
+                if _is_croquis_content_url(val):
                     raw_urls.add(val)
             for part in tag.get("srcset", "").split(","):
                 tokens = part.strip().split()
-                if tokens and CROQUIS_CDN in tokens[0]:
+                if tokens and _is_croquis_content_url(tokens[0]):
                     raw_urls.add(tokens[0])
     else:
         # Fallback: regex scan + exclude obvious site-chrome filenames
@@ -942,8 +1051,7 @@ def scrape_croquis_model_urls(model_slug: str, opener) -> List[str]:
             r'https://cdn\.croquis\.cafe[^\s"\'>]+\.(?:jpg|jpeg|png|webp)', page_html
         ):
             url = m.group(0)
-            fname = url.split("/")[-1].lower()
-            if not any(kw in fname for kw in ("logo", "favicon", "icon", "cropped-croquis")):
+            if _is_croquis_content_url(url):
                 raw_urls.add(url)
 
     # Group size-suffixed variants by their base image
@@ -1076,14 +1184,29 @@ def fetch_croquis_photos_initial(
             time.sleep(idx * 0.5)
         return scrape_croquis_model_urls(slug, opener)
 
-    pool: List[str] = []
-    with ThreadPoolExecutor(max_workers=len(chosen)) as scrape_ex:
-        for urls in scrape_ex.map(_scrape_staggered, enumerate(chosen)):
-            pool.extend(urls)
+    def _scrape_pool() -> List[str]:
+        scraped: List[str] = []
+        with ThreadPoolExecutor(max_workers=len(chosen)) as scrape_ex:
+            for urls in scrape_ex.map(_scrape_staggered, enumerate(chosen)):
+                scraped.extend(urls)
+        return scraped
+
+    pool = _scrape_pool()
+
+    if not pool and croquis_auto_login_available():
+        print("[Croquis] No content URLs found; attempting automatic cookie refresh")
+        refreshed_opener = refresh_croquis_cookies()
+        if refreshed_opener is not None:
+            opener = refreshed_opener
+            pool = _scrape_pool()
 
     if not pool:
+        if croquis_auto_login_available():
+            raise RuntimeError(
+                "No images found from Croquis after automatic login refresh. Check Croquis credentials."
+            )
         raise RuntimeError(
-            "No images found from Croquis \u2014 check cookies and network access."
+            "No images found from Croquis. Cookies likely expired; refresh the Croquis cookie file or configure Croquis credentials for auto-login."
         )
 
     random.shuffle(pool)
@@ -1211,9 +1334,10 @@ class FigureStudyHandler(http.server.SimpleHTTPRequestHandler):
         # Parse query parameters
         params = urllib.parse.parse_qs(query_string)
         count = int(params.get('count', ['20'])[0])
-        practice_type = params.get('practice_type', ['figure'])[0]  # 'figure' or 'hands'
+        enabled_tags_param = params.get('enabled_tags', ['figure,handsfeet,costumes,portraits'])[0]
+        enabled_tags = set(t.strip() for t in enabled_tags_param.split(',') if t.strip())
         
-        print(f"\n[Session Request] practice_type={practice_type}, count={count}")
+        print(f"\n[Session Request] enabled_tags={enabled_tags}, count={count}")
         
         try:
             # Get all image folder names (fast - just listing directories)
@@ -1262,13 +1386,17 @@ class FigureStudyHandler(http.server.SimpleHTTPRequestHandler):
                     if 'ignore' in image_tags:
                         continue
                     
-                    has_hands_tag = 'hands' in image_tags
+                    # Determine image category based on tags
+                    if 'handsfeet' in image_tags:
+                        image_category = 'handsfeet'
+                    elif 'costumes' in image_tags:
+                        image_category = 'costumes'
+                    elif 'portraits' in image_tags:
+                        image_category = 'portraits'
+                    else:
+                        image_category = 'figure'
                     
-                    if practice_type == 'figure' and has_hands_tag:
-                        # Figure practice: exclude images with 'hands' tag
-                        continue
-                    elif practice_type == 'hands' and not has_hands_tag:
-                        # Hands practice: only include images with 'hands' tag
+                    if image_category not in enabled_tags:
                         continue
                     
                     # Find the actual image file (not thumbnail, not metadata.json)

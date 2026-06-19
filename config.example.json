@@ -4,5 +4,7 @@
   "unsplash_access_key": "YOUR_UNSPLASH_ACCESS_KEY",
   "unsplash_query": "people",
   "croquis_cookies": "~/path/to/croquis.cafe_cookies.txt",
-  "note": "Copy this file to config.json and update with your actual paths. The config.json file is gitignored. croquis_cookies should point to a Netscape-format cookies file exported from your browser after logging in to croquis.cafe."
+  "croquis_username": "your-croquis-email@example.com",
+  "croquis_password": "your-croquis-password",
+  "note": "Copy this file to config.json and update with your actual paths. The config.json file is gitignored. croquis_cookies should point to a Netscape-format cookies file exported from your browser after logging in to croquis.cafe. If croquis_username and croquis_password are also set, Stop Noodling will try to refresh that cookie file automatically when Croquis stops returning gallery images."
 }

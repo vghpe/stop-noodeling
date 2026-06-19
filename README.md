@@ -161,6 +161,22 @@ The web app is a single-page application in `index.html` - no build process need
 
 You can start a session from Wikimedia. Images are cached locally for the session and cleared when you click **New Session**.
 
+## Remote Sources (Croquis Cafe)
+
+Croquis Cafe uses a logged-in member session. The simplest setup is still to export a Netscape-format cookie file and point `croquis_cookies` at it in `config.json`.
+
+For a more durable setup, also add `croquis_username` and `croquis_password`. When the saved cookies stop returning real gallery images, Stop Noodling will try to log back in through Croquis's WooCommerce login form and overwrite the cookie file automatically.
+
+Environment variable equivalents are available if you do not want credentials in `config.json`:
+
+```bash
+export STOP_NOODLING_CROQUIS_COOKIES="/path/to/croquis.cafe_cookies.txt"
+export STOP_NOODLING_CROQUIS_USERNAME="your-croquis-email@example.com"
+export STOP_NOODLING_CROQUIS_PASSWORD="your-croquis-password"
+```
+
+If Croquis returns only logos or no gallery images, the server now treats that as an authentication failure instead of importing the site branding as fake poses.
+
 ### Remote Cache Cleanup (Safety Net)
 
 Remote sessions cache downloaded files under `.remote_cache/<session_id>/`.

@@ -9,12 +9,8 @@
     <title>Stop Noodling</title>
     <script src="https://unpkg.com/@panzoom/panzoom@4.5.1/dist/panzoom.min.js"></script>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             background: #282C2F;
@@ -22,47 +18,25 @@
             overflow: auto;
             touch-action: auto;
         }
-        
-        body.study-mode {
-            overflow: hidden;
-            touch-action: none;
-        }
-        
-        /* Start Screen */
+
+        body.study-mode { overflow: hidden; touch-action: none; }
+
+        /* ── Start Screen ─────────────────────────────────────── */
         #start-screen {
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: flex-start;
             min-height: 100vh;
-            padding: 60px 20px 30px 20px;
+            padding: 60px 20px 30px;
             overflow-y: auto;
         }
-        
-        #start-screen h1 {
-            font-size: 2.5rem;
-            margin-bottom: 0.4em;
-            font-weight: 300;
-        }
-        
-        #start-screen .subtitle {
-            font-size: 1rem;
-            color: #9A9388;
-            margin-bottom: 0;
-            font-weight: 400;
-            font-style: italic;
-        }
-        
-        .title-wrapper {
-            margin-bottom: 2rem;
-        }
-        
-        .settings-group {
-            margin-bottom: 1.5rem;
-            width: 100%;
-            max-width: 500px;
-        }
-        
+
+        #start-screen h1 { font-size: 2.5rem; margin-bottom: 0.4em; font-weight: 300; }
+        #start-screen .subtitle { font-size: 1rem; color: #9A9388; font-style: italic; }
+        .title-wrapper { margin-bottom: 2rem; }
+
+        .settings-group { margin-bottom: 1.5rem; width: 100%; max-width: 500px; }
         .settings-group label {
             display: block;
             margin-bottom: 0.4rem;
@@ -71,13 +45,9 @@
             text-transform: uppercase;
             letter-spacing: 1px;
         }
-        
-        .button-group {
-            display: flex;
-            gap: 10px;
-            flex-wrap: wrap;
-        }
-        
+        .settings-hint { margin-top: 0.6rem; font-size: 0.85rem; color: #9A9388; }
+
+        .button-group { display: flex; gap: 10px; flex-wrap: wrap; }
         .button-group button {
             flex: 1;
             min-width: 80px;
@@ -90,19 +60,54 @@
             cursor: pointer;
             transition: all 0.2s;
         }
-
-        .button-group button:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-        }
-        
+        .button-group button:disabled { opacity: 0.5; cursor: not-allowed; }
         .button-group button:active,
-        .button-group button.selected {
-            background: #4998AE;
-            border-color: #4998AE;
-            transform: scale(0.98);
+        .button-group button.selected { background: #4998AE; border-color: #4998AE; transform: scale(0.98); }
+
+        /* ── Tag toggle buttons ───────────────────────────────── */
+        .tag-toggle-group { display: flex; gap: 8px; flex-wrap: wrap; }
+        .tag-btn {
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            padding: 0.55rem 1rem;
+            font-size: 0.95rem;
+            border-radius: 999px;
+            border: 2px solid #4998AE;
+            background: #4998AE22;
+            color: #EAE6D3;
+            cursor: pointer;
+            transition: all 0.18s;
+            font-family: inherit;
         }
-        
+        .tag-btn .tag-icon {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            font-size: 0.7rem;
+            font-weight: 700;
+            flex-shrink: 0;
+            background: #4998AE;
+            color: #fff;
+            transition: all 0.18s;
+        }
+        .tag-btn .tag-icon::before { content: '✓'; }
+        /* OFF state */
+        .tag-btn:not(.selected) {
+            background: transparent;
+            border-color: #3a3d3f;
+            color: #6b6560;
+        }
+        .tag-btn:not(.selected) .tag-icon {
+            background: #3a3d3f;
+            color: #6b6560;
+        }
+        .tag-btn:not(.selected) .tag-icon::before { content: '✕'; }
+        .tag-btn:active { transform: scale(0.97); }
+
         input[type="number"] {
             width: 100%;
             padding: 1rem;
@@ -113,9 +118,9 @@
             border-radius: 8px;
             margin-top: 0.5rem;
         }
-        
-        #start-button {
-            margin-top: 1.5rem;
+
+        /* Primary CTA buttons */
+        .btn-primary {
             padding: 1rem 2.5rem;
             font-size: 1.2rem;
             background: #4998AE;
@@ -126,24 +131,21 @@
             font-weight: 600;
             transition: all 0.2s;
         }
-        
-        #start-button:active {
-            transform: scale(0.98);
-            background: #3a7a8a;
-        }
+        .btn-primary:active { transform: scale(0.98); background: #3a7a8a; }
+        #start-button { margin-top: 1.5rem; }
+        #new-session-button { display: block; margin: 0 auto; padding: 1.2rem 3rem; font-size: 1.3rem; }
 
-        /* Loading Overlay */
+        /* ── Loading Overlay ──────────────────────────────────── */
         #loading-overlay {
             display: none;
             position: fixed;
             inset: 0;
-            background: rgba(0, 0, 0, 0.6);
+            background: rgba(0,0,0,0.6);
             z-index: 3000;
             align-items: center;
             justify-content: center;
             padding: 20px;
         }
-
         #loading-box {
             width: 100%;
             max-width: 360px;
@@ -153,77 +155,55 @@
             padding: 18px 16px;
             text-align: center;
         }
-
         .spinner {
             width: 44px;
             height: 44px;
             border-radius: 50%;
             border: 4px solid #3a3d3f;
             border-top-color: #4998AE;
-            margin: 4px auto 12px auto;
+            margin: 4px auto 12px;
             animation: spin 0.9s linear infinite;
         }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        #loading-text { font-size: 1rem; line-height: 1.4; }
 
-        @keyframes spin {
-            from { transform: rotate(0deg); }
-            to { transform: rotate(360deg); }
-        }
+        /* ── Study Screen ─────────────────────────────────────── */
+        #study-screen { display: none; position: fixed; inset: 0; background: #000; }
 
-        #loading-text {
-            color: #EAE6D3;
-            font-size: 1rem;
-            line-height: 1.4;
-        }
-        
-        /* Study Mode */
-        #study-screen {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: #000;
-        }
-        
         #timer-bar {
             position: fixed;
-            top: 0;
-            left: 0;
+            top: 0; left: 0;
             height: 4px;
-            background: #0066cc;
+            background: #4998AE;
             width: 100%;
             z-index: 1000;
             transition: width 0.1s linear;
         }
-        
+
         #image-container {
             position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
+            inset: 0;
             display: flex;
             align-items: center;
             justify-content: center;
             padding: 0 120px 0 20px;
         }
-        
-        #current-image {
+
+        /* Shared style for study image + its threshold canvas */
+        #current-image, #threshold-study-canvas {
             max-width: 100%;
             max-height: 100%;
             object-fit: contain;
             user-select: none;
             -webkit-user-select: none;
         }
-        
+        #threshold-study-canvas { display: none; }
+
         #study-controls {
             position: fixed;
-            top: 0;
-            right: 0;
-            bottom: 0;
+            top: 0; right: 0; bottom: 0;
             width: 100px;
-            background: rgba(0, 0, 0, 0.9);
+            background: rgba(0,0,0,0.9);
             padding: 20px;
             display: flex;
             flex-direction: column;
@@ -233,101 +213,30 @@
             z-index: 100;
             transition: transform 0.3s;
         }
-        
-        #study-controls.hidden {
-            transform: translateX(100%);
-        }
-        
-        #radial-timer {
-            position: relative;
-            width: 80px;
-            height: 80px;
-        }
-        
-        #radial-timer svg {
-            transform: rotate(-90deg);
-        }
-        
-        #radial-timer .timer-bg {
-            fill: none;
-            stroke: #3a3d3f;
-            stroke-width: 6;
-        }
-        
-        #radial-timer .timer-progress {
-            fill: none;
-            stroke: #4998AE;
-            stroke-width: 6;
-            stroke-linecap: round;
-            transition: stroke-dashoffset 0.1s linear;
-        }
-        
-        #radial-timer .timer-text {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            font-size: 0.9rem;
-            color: #9A9388;
-            font-weight: 500;
-        }
-        
-        #image-counter {
-            font-size: 0.9rem;
-            color: #9A9388;
-            text-align: right;
-            line-height: 1.3;
-            min-height: 1.1em;
-            white-space: nowrap;
-            width: 100%;
-            align-self: flex-end;
-        }
+        #study-controls.hidden { transform: translateX(100%); }
 
-        #image-progress {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            width: 100%;
-        }
+        #radial-timer { position: relative; width: 80px; height: 80px; }
+        #radial-timer svg { transform: rotate(-90deg); }
+        #radial-timer .timer-bg { fill: none; stroke: #3a3d3f; stroke-width: 6; }
+        #radial-timer .timer-progress { fill: none; stroke: #4998AE; stroke-width: 6; stroke-linecap: round; transition: stroke-dashoffset 0.1s linear; }
+        #radial-timer .timer-text { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); font-size: 0.9rem; color: #9A9388; font-weight: 500; }
 
-        .dots {
-            display: none;
-            margin-top: 6px;
-            height: 10px;
-        }
+        #image-progress { display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100%; }
+        #image-counter { font-size: 0.9rem; color: #9A9388; text-align: right; line-height: 1.3; min-height: 1.1em; white-space: nowrap; width: 100%; align-self: flex-end; }
 
-        .dots .dot {
-            display: inline-block;
-            width: 5px;
-            height: 5px;
-            margin: 0 3px;
-            border-radius: 50%;
-            background: #5F544C;
-            opacity: 0.3;
-            animation: dotPulse 1s infinite ease-in-out;
-        }
-
+        .dots { display: none; margin-top: 6px; height: 10px; }
+        .dots .dot { display: inline-block; width: 5px; height: 5px; margin: 0 3px; border-radius: 50%; background: #5F544C; opacity: 0.3; animation: dotPulse 1s infinite ease-in-out; }
         .dots .dot:nth-child(2) { animation-delay: 0.15s; }
-        .dots .dot:nth-child(3) { animation-delay: 0.30s; }
-
+        .dots .dot:nth-child(3) { animation-delay: 0.3s; }
         @keyframes dotPulse {
             0%, 80%, 100% { opacity: 0.25; transform: translateY(0); }
             40% { opacity: 0.75; transform: translateY(-1px); }
         }
-        
-        .control-buttons {
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-            width: 100%;
-        }
-        
+
+        .control-buttons { display: flex; flex-direction: column; gap: 10px; width: 100%; }
         .control-buttons button {
-            width: 60px;
-            height: 60px;
+            width: 60px; height: 60px;
             padding: 0;
-            font-size: 1.8rem;
             background: #3a3d3f;
             color: #EAE6D3;
             border: 2px solid #5F544C;
@@ -337,45 +246,38 @@
             align-items: center;
             justify-content: center;
         }
+        .control-buttons button:disabled { opacity: 0.45; cursor: not-allowed; }
+        .control-buttons button:active { transform: scale(0.95); }
 
-        .control-buttons button:disabled {
-            opacity: 0.45;
-            cursor: not-allowed;
-        }
-        
-        .control-buttons button:active {
-            transform: scale(0.95);
-        }
-        
-        #fullscreen-toggle-button {
-            position: absolute;
-            top: 90px;
-            right: 20px;
-            width: 60px;
-            height: 60px;
-            background: rgba(40, 44, 47, 0.85);
+        /* ── Round overlay icon buttons (shared) ─────────────── */
+        .icon-btn {
+            width: 60px; height: 60px;
+            background: rgba(40,44,47,0.85);
             border: 2px solid #5F544C;
             border-radius: 50%;
             cursor: pointer;
             display: flex;
             align-items: center;
             justify-content: center;
-            transition: background 0.2s, border-color 0.2s, color 0.2s;
             color: #EAE6D3;
+            transition: background 0.2s, border-color 0.2s, color 0.2s;
             pointer-events: auto;
         }
-        
-        #fullscreen-toggle-button:active {
-            transform: scale(0.9);
-        }
-        
-        #favorite-button {
+        .icon-btn:active { transform: scale(0.9); }
+
+        /* Per-button positioning overrides */
+        #fullscreen-toggle-button   { position: absolute; top: 90px; right: 20px; }
+        #fullscreen-review-toggle   { position: absolute; top: 90px; right: 20px; display: none; }
+        #fullscreen-lock-button     { position: fixed; top: 20px; right: 90px; z-index: 2001; user-select: none; -webkit-user-select: none; }
+        #threshold-toggle-button    { flex-shrink: 0; }
+        #threshold-toggle-button.active { border-color: #4998AE; color: #4998AE; }
+
+        /* ── Favorite buttons (shared) ────────────────────────── */
+        .fav-btn {
             position: fixed;
-            top: 20px;
-            right: 20px;
-            width: 60px;
-            height: 60px;
-            background: rgba(0, 0, 0, 0.7);
+            top: 20px; right: 20px;
+            width: 60px; height: 60px;
+            background: rgba(0,0,0,0.7);
             border: 2px solid #444;
             border-radius: 50%;
             cursor: pointer;
@@ -383,148 +285,57 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            z-index: 200;
-            transition: all 0.3s;
-            color: #ffffff;
+            color: #fff;
         }
-        
-        #favorite-button.hidden {
-            transform: translateY(-100px);
-            opacity: 0;
-        }
-        
-        #favorite-button.favorited {
-            color: #ffd700;
-            background: rgba(255, 215, 0, 0.2);
-            border-color: #ffd700;
-        }
-        
-        #favorite-button:active {
-            transform: scale(0.9);
-        }
+        .fav-btn:active { transform: scale(0.9); }
+        .fav-btn.favorited { color: #E09185; background: rgba(224,145,133,0.2); border-color: #E09185; }
 
-        #fullscreen-favorite-button.hidden {
-            display: none;
-        }
-        
-        /* Review Screen */
+        #favorite-button { z-index: 200; transition: all 0.3s; }
+        #favorite-button.hidden { transform: translateY(-100px); opacity: 0; }
+        #fullscreen-favorite-button { z-index: 2001; }
+
+        /* ── Review Screen ────────────────────────────────────── */
         #review-screen {
             display: none;
-            padding: 20px;
-            min-height: 100vh;
-            overflow-y: auto;
             position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
+            inset: 0;
+            padding: 20px;
+            overflow-y: auto;
         }
-        
-        #review-screen h2 {
-            text-align: center;
-            margin-bottom: 2rem;
-            font-weight: 300;
-        }
-        
+        #review-screen h2 { text-align: center; margin-bottom: 2rem; font-weight: 300; }
+
         #thumbnail-grid {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
             gap: 15px;
             margin-bottom: 2rem;
         }
+        .thumbnail-item { position: relative; aspect-ratio: 1; cursor: pointer; border-radius: 8px; overflow: hidden; background: #3a3d3f; }
+        .thumbnail-item img { width: 100%; height: 100%; object-fit: cover; }
+        .thumbnail-item .star-badge { position: absolute; top: 5px; right: 5px; font-size: 1.5rem; color: #E09185; text-shadow: 0 0 3px rgba(40,44,47,0.8); }
 
-        .settings-hint {
-            margin-top: 0.6rem;
-            font-size: 0.85rem;
-            color: #9A9388;
-        }
-        
-        .thumbnail-item {
-            position: relative;
-            aspect-ratio: 1;
-            cursor: pointer;
-            border-radius: 8px;
-            overflow: hidden;
-            background: #3a3d3f;
-        }
-        
-        .thumbnail-item img {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-        }
-        
-        .thumbnail-item .star-badge {
-            position: absolute;
-            top: 5px;
-            right: 5px;
-            font-size: 1.5rem;
-            color: #E09185;
-            text-shadow: 0 0 3px rgba(40, 44, 47, 0.8);
-        }
-        
-        #new-session-button {
-            display: block;
-            margin: 0 auto;
-            padding: 1.2rem 3rem;
-            font-size: 1.3rem;
-            background: #4998AE;
-            color: #EAE6D3;
-            border: none;
-            border-radius: 8px;
-            cursor: pointer;
-            font-weight: 600;
-        }
-        
-        /* Fullscreen Review */
-        #fullscreen-review {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: #000;
-            z-index: 2000;
-            overflow: hidden;
-        }
-        
-        #fullscreen-content {
-            position: absolute;
-            inset: 0;
-        }
+        /* ── Fullscreen Review ────────────────────────────────── */
+        #fullscreen-review { display: none; position: fixed; inset: 0; background: #000; z-index: 2000; overflow: hidden; }
+        #fullscreen-content { position: absolute; inset: 0; }
 
-        #fullscreen-review img {
-            position: absolute;
-            inset: 0;
-            width: 100%;
-            height: 100%;
-            object-fit: contain;
-            padding: 60px 20px;
-            cursor: grab;
-        }
-
+        /* Shared style for review image + its threshold canvas */
+        #fullscreen-review img,
         #threshold-review-canvas {
             position: absolute;
             inset: 0;
-            width: 100%;
-            height: 100%;
+            width: 100%; height: 100%;
             object-fit: contain;
             padding: 60px 20px;
             cursor: grab;
-            display: none;
         }
-        
-        #fullscreen-review img:active {
-            cursor: grabbing;
-        }
-        
+        #threshold-review-canvas { display: none; }
+        #fullscreen-review img:active { cursor: grabbing; }
+
         #back-button {
             position: fixed;
-            top: 20px;
-            left: 20px;
+            top: 20px; left: 20px;
             padding: 0.8rem 1.5rem;
-            background: rgba(40, 44, 47, 0.8);
+            background: rgba(40,44,47,0.8);
             color: #EAE6D3;
             border: 2px solid #5F544C;
             border-radius: 8px;
@@ -532,97 +343,17 @@
             font-size: 1rem;
             z-index: 2001;
         }
-        
-        #fullscreen-favorite-button {
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            width: 60px;
-            height: 60px;
-            background: rgba(0, 0, 0, 0.7);
-            border: 2px solid #444;
-            border-radius: 50%;
-            cursor: pointer;
-            font-size: 2rem;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 2001;
-            color: #ffffff;
-        }
 
-        #fullscreen-lock-button {
-            position: fixed;
-            top: 20px;
-            right: 90px;
-            width: 60px;
-            height: 60px;
-            background: rgba(40, 44, 47, 0.8);
-            border: 2px solid #5F544C;
-            border-radius: 50%;
-            cursor: pointer;
-            font-size: 1.6rem;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 2001;
-            color: #EAE6D3;
-            user-select: none;
-            -webkit-user-select: none;
-        }
-        
-        #fullscreen-favorite-button.favorited {
-            color: #E09185;
-            background: rgba(224, 145, 133, 0.2);
-            border-color: #E09185;
-        }
-        
-        #fullscreen-review-toggle {
-            position: absolute;
-            top: 90px;
-            right: 20px;
-            width: 60px;
-            height: 60px;
-            background: rgba(40, 44, 47, 0.85);
-            border: 2px solid #5F544C;
-            border-radius: 50%;
-            cursor: pointer;
-            display: none;
-            align-items: center;
-            justify-content: center;
-            transition: background 0.2s, border-color 0.2s, color 0.2s;
-            color: #EAE6D3;
-            pointer-events: auto;
-        }
-        
-        .loading {
-            text-align: center;
-            padding: 2rem;
-            font-size: 1.2rem;
-            color: #9A9388;
-        }
-        
-        .hidden {
-            display: none !important;
-        }
-        
-        /* Threshold Controls — full-screen overlay with absolute children */
-        #threshold-controls {
-            position: fixed;
-            inset: 0;
-            z-index: 3000;
-            pointer-events: none;
-        }
+        /* ── Utilities ────────────────────────────────────────── */
+        .hidden { display: none !important; }
+        .no-fullscreen-support { display: none !important; }
 
-        #threshold-controls.hidden {
-            display: none !important;
-        }
+        /* ── Threshold Controls ───────────────────────────────── */
+        #threshold-controls { position: fixed; inset: 0; z-index: 3000; pointer-events: none; }
 
         #threshold-bar {
             position: absolute;
-            bottom: 0;
-            left: 0;
-            right: 0;
+            bottom: 0; left: 0; right: 0;
             display: flex;
             align-items: center;
             justify-content: flex-end;
@@ -630,36 +361,10 @@
             gap: 14px;
             transition: background 0.2s;
         }
-
         #threshold-bar.active {
-            background: linear-gradient(to top, rgba(15, 17, 19, 0.55), transparent);
+            background: linear-gradient(to top, rgba(15,17,19,0.55), transparent);
             justify-content: flex-start;
             pointer-events: auto;
-        }
-
-        #threshold-toggle-button {
-            width: 60px;
-            height: 60px;
-            background: rgba(40, 44, 47, 0.85);
-            border: 2px solid #5F544C;
-            border-radius: 50%;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: #EAE6D3;
-            transition: background 0.2s, border-color 0.2s, color 0.2s;
-            pointer-events: auto;
-            flex-shrink: 0;
-        }
-
-        #threshold-toggle-button.active {
-            border-color: #4998AE;
-            color: #4998AE;
-        }
-
-        .no-fullscreen-support {
-            display: none !important;
         }
 
         #threshold-slider {
@@ -675,135 +380,44 @@
             outline: none;
             -webkit-tap-highlight-color: transparent;
         }
-
         #threshold-slider:focus,
-        #threshold-slider:focus-visible {
-            outline: none;
-            box-shadow: none;
-        }
+        #threshold-slider:focus-visible { outline: none; box-shadow: none; }
+        #threshold-bar.active #threshold-slider { display: block; }
 
-        #threshold-bar.active #threshold-slider {
-            display: block;
-        }
+        #threshold-slider::-webkit-slider-runnable-track { height: 2px; border-radius: 1px; background: rgba(255,255,255,0.2); }
+        #threshold-slider::-webkit-slider-thumb { -webkit-appearance: none; width: 60px; height: 60px; background: radial-gradient(circle, #4998AE 11px, rgba(73,152,174,0) 12px); border: none; margin-top: -29px; cursor: pointer; outline: none; box-shadow: none; }
+        #threshold-slider::-moz-range-track { height: 2px; border-radius: 1px; background: rgba(255,255,255,0.2); }
+        #threshold-slider::-moz-range-thumb { width: 60px; height: 60px; background: radial-gradient(circle, #4998AE 11px, rgba(73,152,174,0) 12px); border: none; box-sizing: border-box; }
 
-        #threshold-slider::-webkit-slider-runnable-track {
-            height: 2px;
-            border-radius: 1px;
-            background: rgba(255, 255, 255, 0.2);
-        }
+        #threshold-value-label { display: none; font-size: 0.8rem; color: #9A9388; min-width: 28px; text-align: right; }
+        #threshold-bar.active #threshold-value-label { display: block; }
 
-        #threshold-slider::-webkit-slider-thumb {
-            -webkit-appearance: none;
-            width: 60px;
-            height: 60px;
-            background: radial-gradient(circle, #4998AE 11px, rgba(73,152,174,0) 12px);
-            border: none;
-            margin-top: -29px;
-            cursor: pointer;
-            outline: none;
-            box-shadow: none;
-        }
-
-        #threshold-slider::-moz-range-track {
-            height: 2px;
-            border-radius: 1px;
-            background: rgba(255, 255, 255, 0.2);
-        }
-
-        #threshold-slider::-moz-range-thumb {
-            width: 60px;
-            height: 60px;
-            background: radial-gradient(circle, #4998AE 11px, rgba(73,152,174,0) 12px);
-            border: none;
-            box-sizing: border-box;
-        }
-
-        #threshold-value-label {
-            display: none;
-            font-size: 0.8rem;
-            color: #9A9388;
-            min-width: 28px;
-            text-align: right;
-        }
-
-        #threshold-bar.active #threshold-value-label {
-            display: block;
-        }
-
-        #threshold-study-canvas {
-            max-width: 100%;
-            max-height: 100%;
-            object-fit: contain;
-            user-select: none;
-            -webkit-user-select: none;
-            display: none;
-        }
-
-        /* Phone layout: Bottom navigation */
+        /* ── Phone layout: bottom navigation ─────────────────── */
         @media (max-width: 600px) {
-            #image-container {
-                padding: 20px 20px 120px 20px;
-            }
-            
+            #image-container { padding: 20px 20px 120px; }
+
             #study-controls {
-                top: auto;
-                bottom: 0;
-                right: 0;
-                left: 0;
-                width: 100%;
-                height: auto;
+                top: auto; bottom: 0; right: 0; left: 0;
+                width: 100%; height: auto;
                 flex-direction: row;
                 justify-content: space-around;
                 padding: 15px;
             }
-            
-            #study-controls.hidden {
-                transform: translateY(100%);
-            }
-            
-            #radial-timer {
-                order: 1;
-            }
-            
-            #image-progress {
-                order: 0;
-            }
+            #study-controls.hidden { transform: translateY(100%); }
 
-            #image-counter {
-                font-size: 0.8rem;
-            }
-            
-            .control-buttons {
-                order: 2;
-                flex-direction: row;
-                gap: 10px;
-            }
-            
-            .control-buttons button {
-                width: 50px;
-                height: 50px;
-                font-size: 1.5rem;
-            }
-            
-            #start-screen h1 {
-                font-size: 2rem;
-            }
-            
-            #review-screen {
-                padding: 20px 20px 80px 20px;
-            }
-            
-            #thumbnail-grid {
-                grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-                gap: 10px;
-            }
-            
-            /* Hide fullscreen buttons on phones - already fullscreen */
+            #radial-timer { order: 1; }
+            #image-progress { order: 0; }
+            #image-counter { font-size: 0.8rem; }
+            .control-buttons { order: 2; flex-direction: row; gap: 10px; }
+            .control-buttons button { width: 50px; height: 50px; }
+
+            #start-screen h1 { font-size: 2rem; }
+            #review-screen { padding: 20px 20px 80px; }
+            #thumbnail-grid { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; }
+
+            /* Hide fullscreen buttons — phones are already fullscreen */
             #fullscreen-toggle-button,
-            #fullscreen-review-toggle {
-                display: none !important;
-            }
-
+            #fullscreen-review-toggle { display: none !important; }
         }
     </style>
 </head>
@@ -814,7 +428,7 @@
             <h1>Stop Noodling</h1>
             <p class="subtitle">don't be precious and practice lots</p>
         </div>
-        
+
         <div class="settings-group">
             <label>Timer Duration</label>
             <div class="button-group">
@@ -825,21 +439,13 @@
             </div>
             <input type="number" id="custom-duration" placeholder="Custom (seconds)" min="10" max="3600">
         </div>
-        
+
         <div class="settings-group">
             <label>Number of Images</label>
             <div class="button-group">
                 <button data-count="10">10</button>
                 <button data-count="20" class="selected">20</button>
                 <button data-count="30">30</button>
-            </div>
-        </div>
-        
-        <div class="settings-group">
-            <label>Practice Type</label>
-            <div class="button-group">
-                <button data-practice="figure" class="selected">Figure</button>
-                <button data-practice="hands">Hands</button>
             </div>
         </div>
 
@@ -853,7 +459,17 @@
             </div>
             <div class="settings-hint">Wikimedia and Unsplash use remote photos. Wikimedia cache is cleared after the session. Croquis Café requires a valid cookies file configured on the server.</div>
         </div>
-        
+
+        <div class="settings-group" id="categories-group">
+            <label>Categories</label>
+            <div class="tag-toggle-group">
+                <button data-tag="figure" class="tag-btn selected"><span class="tag-icon"></span>Figure</button>
+                <button data-tag="handsfeet" class="tag-btn selected"><span class="tag-icon"></span>Hands &amp; Feet</button>
+                <button data-tag="costumes" class="tag-btn selected"><span class="tag-icon"></span>Costumes</button>
+                <button data-tag="portraits" class="tag-btn selected"><span class="tag-icon"></span>Portraits</button>
+            </div>
+        </div>
+
         <div class="settings-group">
             <label>Start in Full Screen</label>
             <div class="button-group">
@@ -861,8 +477,8 @@
                 <button data-fullscreen="false">Off</button>
             </div>
         </div>
-        
-        <button id="start-button">Start Session</button>
+
+        <button id="start-button" class="btn-primary">Start Session</button>
     </div>
 
     <div id="loading-overlay">
@@ -871,7 +487,7 @@
             <div id="loading-text">Loading...</div>
         </div>
     </div>
-    
+
     <!-- Study Screen -->
     <div id="study-screen">
         <div id="timer-bar"></div>
@@ -879,7 +495,7 @@
             <img id="current-image" alt="Reference image">
             <canvas id="threshold-study-canvas"></canvas>
         </div>
-        <button id="favorite-button">☆</button>
+        <button id="favorite-button" class="fav-btn">\u2606</button>
         <div id="study-controls">
             <div id="radial-timer">
                 <svg width="80" height="80">
@@ -904,22 +520,22 @@
             </div>
         </div>
     </div>
-    
+
     <!-- Review Screen -->
     <div id="review-screen">
         <h2>Session Complete</h2>
         <div id="thumbnail-grid"></div>
-        <button id="new-session-button">New Session</button>
+        <button id="new-session-button" class="btn-primary">New Session</button>
     </div>
-    
+
     <!-- Threshold Controls -->
     <div id="threshold-controls" class="hidden">
         <div id="threshold-bar">
             <span id="threshold-value-label">128</span>
             <input type="range" id="threshold-slider" min="1" max="255" value="128">
-            <button id="fullscreen-toggle-button" title="Toggle Fullscreen"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path></svg></button>
-            <button id="fullscreen-review-toggle" title="Toggle Fullscreen"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path></svg></button>
-            <button id="threshold-toggle-button" title="Toggle Threshold">
+            <button id="fullscreen-toggle-button" class="icon-btn" title="Toggle Fullscreen"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path></svg></button>
+            <button id="fullscreen-review-toggle" class="icon-btn" title="Toggle Fullscreen"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path></svg></button>
+            <button id="threshold-toggle-button" class="icon-btn" title="Toggle Threshold">
                 <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true">
                     <circle cx="12" cy="12" r="9" fill="currentColor" opacity="0.2"/>
                     <path d="M12 3a9 9 0 0 1 0 18V3z" fill="currentColor"/>
@@ -932,8 +548,8 @@
     <!-- Fullscreen Review -->
     <div id="fullscreen-review">
         <button id="back-button"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg> Back</button>
-        <button id="fullscreen-favorite-button">☆</button>
-        <button id="fullscreen-lock-button" title="Lock pan/zoom" aria-pressed="false" aria-label="Lock pan and zoom"></button>
+        <button id="fullscreen-favorite-button" class="fav-btn">\u2606</button>
+        <button id="fullscreen-lock-button" class="icon-btn" title="Lock pan/zoom" aria-pressed="false" aria-label="Lock pan and zoom"></button>
         <div id="fullscreen-content">
             <img id="fullscreen-image" alt="Review image">
             <canvas id="threshold-review-canvas"></canvas>
@@ -941,11 +557,11 @@
     </div>
 
     <script>
-        // Application State
+        // ── Application State ──────────────────────────────────
         const state = {
             duration: 60,
             count: 20,
-            practiceType: 'figure',
+            enabledTags: new Set(['figure', 'handsfeet', 'costumes', 'portraits']),
             source: 'local',
             useFullscreen: true,
             images: [],
@@ -967,22 +583,19 @@
             _thresholdCache: { data: null, w: 0, h: 0 },
             _thresholdDebounce: null
         };
-        
-        // DOM Elements
+
         const screens = {
             start: document.getElementById('start-screen'),
             study: document.getElementById('study-screen'),
             review: document.getElementById('review-screen'),
             fullscreen: document.getElementById('fullscreen-review')
         };
-        
-        // Initialize
+
         document.addEventListener('DOMContentLoaded', () => {
             setupStartScreen();
             setupStudyScreen();
             setupReviewScreen();
             setupThresholdControls();
-            // Hide fullscreen buttons on platforms without Fullscreen API support (e.g. iOS Safari)
             if (!document.fullscreenEnabled && !document.webkitFullscreenEnabled) {
                 document.querySelectorAll('#fullscreen-toggle-button, #fullscreen-review-toggle').forEach(btn => {
                     btn.classList.add('no-fullscreen-support');
@@ -990,160 +603,129 @@
             }
         });
 
+        // ── Helpers ────────────────────────────────────────────
+
         function showLoading(message) {
-            const overlay = document.getElementById('loading-overlay');
-            const text = document.getElementById('loading-text');
-            text.textContent = message || 'Loading...';
-            overlay.style.display = 'flex';
+            document.getElementById('loading-text').textContent = message || 'Loading...';
+            document.getElementById('loading-overlay').style.display = 'flex';
         }
 
         function hideLoading() {
-            const overlay = document.getElementById('loading-overlay');
-            overlay.style.display = 'none';
+            document.getElementById('loading-overlay').style.display = 'none';
         }
-        
-        function setupStartScreen() {
-            // Duration selection
-            document.querySelectorAll('[data-duration]').forEach(btn => {
+
+        // Wire up a group of [data-*] toggle buttons, deselect siblings, call onChange(btn).
+        function pickButton(selector, onChange) {
+            document.querySelectorAll(selector).forEach(btn => {
                 btn.addEventListener('click', () => {
-                    document.querySelectorAll('[data-duration]').forEach(b => b.classList.remove('selected'));
+                    if (btn.disabled) return;
+                    document.querySelectorAll(selector).forEach(b => b.classList.remove('selected'));
                     btn.classList.add('selected');
-                    state.duration = parseInt(btn.dataset.duration);
-                    document.getElementById('custom-duration').value = '';
+                    onChange(btn);
                 });
             });
-            
+        }
+
+        // Swap pause/play button visibility.
+        function setPauseUI(paused) {
+            document.getElementById('pause-button').style.display = paused ? 'none' : 'flex';
+            document.getElementById('play-button').style.display  = paused ? 'flex' : 'none';
+        }
+
+        function enterFullscreen() {
+            const elem = document.documentElement;
+            if (elem.requestFullscreen) elem.requestFullscreen();
+            else if (elem.webkitRequestFullscreen) elem.webkitRequestFullscreen();
+        }
+
+        function exitFullscreen() {
+            if (document.exitFullscreen) document.exitFullscreen();
+            else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+        }
+
+        // ── Start Screen ───────────────────────────────────────
+
+        function setupStartScreen() {
+            pickButton('[data-duration]', btn => {
+                state.duration = parseInt(btn.dataset.duration);
+                document.getElementById('custom-duration').value = '';
+            });
+
             document.getElementById('custom-duration').addEventListener('input', (e) => {
                 if (e.target.value) {
                     document.querySelectorAll('[data-duration]').forEach(b => b.classList.remove('selected'));
                     state.duration = parseInt(e.target.value) || 60;
                 }
             });
-            
-            // Count selection
-            document.querySelectorAll('[data-count]').forEach(btn => {
+
+            pickButton('[data-count]',      btn => { state.count        = parseInt(btn.dataset.count); });
+            document.querySelectorAll('[data-tag]').forEach(btn => {
                 btn.addEventListener('click', () => {
-                    document.querySelectorAll('[data-count]').forEach(b => b.classList.remove('selected'));
-                    btn.classList.add('selected');
-                    state.count = parseInt(btn.dataset.count);
-                });
-            });
-            
-            // Practice type selection
-            document.querySelectorAll('[data-practice]').forEach(btn => {
-                btn.addEventListener('click', () => {
-                    if (btn.disabled) {
-                        return;
+                    const tag = btn.dataset.tag;
+                    if (state.enabledTags.has(tag)) {
+                        state.enabledTags.delete(tag);
+                        btn.classList.remove('selected');
+                    } else {
+                        state.enabledTags.add(tag);
+                        btn.classList.add('selected');
                     }
-                    document.querySelectorAll('[data-practice]').forEach(b => b.classList.remove('selected'));
-                    btn.classList.add('selected');
-                    state.practiceType = btn.dataset.practice;
+                    updateStartButton();
                 });
             });
+            pickButton('[data-source]',     btn => { state.source = btn.dataset.source; updatePracticeAvailability(); });
+            pickButton('[data-fullscreen]', btn => { state.useFullscreen = btn.dataset.fullscreen === 'true'; });
 
-            // Source selection
-            document.querySelectorAll('[data-source]').forEach(btn => {
-                btn.addEventListener('click', () => {
-                    document.querySelectorAll('[data-source]').forEach(b => b.classList.remove('selected'));
-                    btn.classList.add('selected');
-                    state.source = btn.dataset.source;
-                    updatePracticeAvailability();
-                });
-            });
-            
-            // Fullscreen selection
-            document.querySelectorAll('[data-fullscreen]').forEach(btn => {
-                btn.addEventListener('click', () => {
-                    document.querySelectorAll('[data-fullscreen]').forEach(b => b.classList.remove('selected'));
-                    btn.classList.add('selected');
-                    state.useFullscreen = btn.dataset.fullscreen === 'true';
-                });
-            });
-            
-            // Start button
             document.getElementById('start-button').addEventListener('click', startSession);
-
             updatePracticeAvailability();
+        }
+
+        function updateStartButton() {
+            const startBtn = document.getElementById('start-button');
+            const isLocal = state.source === 'local';
+            const noTagsSelected = isLocal && state.enabledTags.size === 0;
+            startBtn.disabled = noTagsSelected;
         }
 
         function updatePracticeAvailability() {
             const isLocal = state.source === 'local';
-            const practiceButtons = document.querySelectorAll('[data-practice]');
+            document.getElementById('categories-group').style.display = isLocal ? '' : 'none';
+            updateStartButton();
+        }
 
-            practiceButtons.forEach(btn => {
-                btn.disabled = !isLocal;
-            });
-
-            if (!isLocal) {
-                state.practiceType = 'figure';
-                document.querySelectorAll('[data-practice]').forEach(b => b.classList.remove('selected'));
-                document.querySelector('[data-practice="figure"]').classList.add('selected');
-            }
-        }
-        
-        function enterFullscreen() {
-            const elem = document.documentElement;
-            if (elem.requestFullscreen) {
-                elem.requestFullscreen();
-            } else if (elem.webkitRequestFullscreen) {
-                elem.webkitRequestFullscreen();
-            } else if (elem.msRequestFullscreen) {
-                elem.msRequestFullscreen();
-            }
-        }
-        
-        function exitFullscreen() {
-            if (document.exitFullscreen) {
-                document.exitFullscreen();
-            } else if (document.webkitExitFullscreen) {
-                document.webkitExitFullscreen();
-            } else if (document.msExitFullscreen) {
-                document.msExitFullscreen();
-            }
-        }
-        
         async function startSession() {
             try {
                 disableThreshold();
                 const isRemoteSource = state.source !== 'local';
-                const buttonText = isRemoteSource ? 'Fetching images...' : 'Loading...';
                 const overlayMessage = !isRemoteSource
                     ? 'Loading...'
                     : state.source === 'wikimedia'
                         ? `Fetching initial batch (~10s).\nMore photos load safely in the background until ${state.count} are ready.`
                         : state.source === 'croquis'
-                            ? `Fetching Croquis Caf\u00e9 photos\u2026\nScraping model pages then downloading in the background.`
+                            ? `Fetching Croquis Café photos…\nScraping model pages then downloading in the background.`
                             : 'Fetching Unsplash people photos...';
-                document.getElementById('start-button').textContent = buttonText;
 
-                // If the first fetch takes a while, show a spinner overlay.
-                const loadingTimer = setTimeout(() => {
-                    showLoading(overlayMessage);
-                }, 400);
+                document.getElementById('start-button').textContent = isRemoteSource ? 'Fetching images...' : 'Loading...';
 
+                const loadingTimer = setTimeout(() => showLoading(overlayMessage), 400);
                 await cleanupRemoteSessionIfNeeded();
 
                 const endpoint = isRemoteSource
                     ? `/api/remote-session?count=${state.count}&source=${encodeURIComponent(state.source)}`
-                    : `/api/session?count=${state.count}&practice_type=${state.practiceType}`;
-                
+                    : `/api/session?count=${state.count}&enabled_tags=${encodeURIComponent([...state.enabledTags].join(','))}`;
+
                 const response = await fetch(endpoint);
                 const data = await response.json();
-
                 clearTimeout(loadingTimer);
                 hideLoading();
-                
+
                 if (!data.success) {
                     alert(`Error: ${data.error}`);
                     document.getElementById('start-button').textContent = 'Start Session';
                     return;
                 }
-                
-                // Show warning if fewer images found than requested
-                if (data.warning) {
-                    alert(data.warning);
-                }
-                
+
+                if (data.warning) alert(data.warning);
+
                 state.images = data.images;
                 state.currentIndex = 0;
                 state.isPaused = false;
@@ -1152,205 +734,136 @@
                 state.remoteSessionId = data.session_id || null;
                 state.remoteFetching = data.fetching || false;
 
-                updateFavoriteVisibility();
-                
-                // Start polling for more images if remote and still fetching
-                if (state.remoteFetching && state.remoteSessionId) {
-                    startRemotePolling();
-                }
-                
-                // Reset pause button states
-                document.getElementById('pause-button').style.display = 'flex';
-                document.getElementById('play-button').style.display = 'none';
-                
-                // Preload first few images
+                updateThresholdButtonState();
+                document.getElementById('favorite-button').classList.remove('hidden');
+
+                if (state.remoteFetching && state.remoteSessionId) startRemotePolling();
+
+                setPauseUI(false);
                 preloadImages(0, 3);
-                
                 showScreen('study');
                 document.body.classList.add('study-mode');
-                
-                if (state.useFullscreen) {
-                    enterFullscreen();
-                }
-                
+                if (state.useFullscreen) enterFullscreen();
                 startTimer();
                 displayCurrentImage();
-                
+
             } catch (error) {
                 hideLoading();
                 alert(`Error starting session: ${error.message}`);
                 document.getElementById('start-button').textContent = 'Start Session';
             }
         }
-        
+
+        // ── Study Screen ───────────────────────────────────────
+
         function setupStudyScreen() {
-            // Toggle controls on image tap
             document.getElementById('image-container').addEventListener('click', () => {
                 state.controlsVisible = !state.controlsVisible;
-                const controls = document.getElementById('study-controls');
-                const favoriteBtn = document.getElementById('favorite-button');
-                const fullscreenBtn = document.getElementById('fullscreen-toggle-button');
-                
-                if (state.controlsVisible) {
-                    controls.classList.remove('hidden');
-                    fullscreenBtn.classList.remove('hidden');
-                    favoriteBtn.classList.remove('hidden');
-                } else {
-                    controls.classList.add('hidden');
-                    favoriteBtn.classList.add('hidden');
-                    fullscreenBtn.classList.add('hidden');
-                }
+                const show = state.controlsVisible;
+                document.getElementById('study-controls').classList.toggle('hidden', !show);
+                document.getElementById('favorite-button').classList.toggle('hidden', !show);
+                document.getElementById('fullscreen-toggle-button').classList.toggle('hidden', !show);
             });
-            
-            // Pause/Resume
-            document.getElementById('pause-button').addEventListener('click', () => {
-                pauseTimer();
-            });
-            
-            document.getElementById('play-button').addEventListener('click', () => {
-                resumeTimer();
-            });
-            
-            // Skip
+
+            document.getElementById('pause-button').addEventListener('click', pauseTimer);
+            document.getElementById('play-button').addEventListener('click', resumeTimer);
+
             document.getElementById('skip-button').addEventListener('click', (e) => {
                 e.stopPropagation();
                 nextImage();
             });
-            
-            // End session
+
             document.getElementById('end-button').addEventListener('click', (e) => {
                 e.stopPropagation();
-                if (confirm('End session early?')) {
-                    endSession();
-                }
+                if (confirm('End session early?')) endSession();
             });
-            
-            // Fullscreen toggle
+
             document.getElementById('fullscreen-toggle-button').addEventListener('click', (e) => {
                 e.stopPropagation();
-                if (document.fullscreenElement) {
-                    exitFullscreen();
-                } else {
-                    enterFullscreen();
-                }
+                document.fullscreenElement ? exitFullscreen() : enterFullscreen();
             });
-            
-            // Favorite
+
             document.getElementById('favorite-button').addEventListener('click', (e) => {
                 e.stopPropagation();
                 toggleFavorite(state.currentIndex);
             });
         }
-        
+
         function displayCurrentImage() {
-            const image = state.images[state.currentIndex];
-            const img = document.getElementById('current-image');
+            const image  = state.images[state.currentIndex];
+            const img    = document.getElementById('current-image');
             const canvas = document.getElementById('threshold-study-canvas');
 
             state._thresholdCache = { data: null, w: 0, h: 0 };
-            img.style.display = '';
+            img.style.display    = '';
             canvas.style.display = 'none';
             img.src = image.image_path;
 
-            if (state.thresholdEnabled) {
-                showThreshold(img, canvas);
-            }
-            
-            // Update counter with fetch status
+            if (state.thresholdEnabled) showThreshold(img, canvas);
             updateImageCounter();
-            
-            // Update favorite button
             updateFavoriteButton();
-            
-            // Preload next images
             preloadImages(state.currentIndex + 1, state.currentIndex + 3);
         }
-        
+
         function updateImageCounter() {
-            const counter = document.getElementById('image-counter');
-            const indicator = document.getElementById('remote-fetching-indicator');
+            const fetching = state.isRemote && state.remoteFetching;
+            document.getElementById('image-counter').textContent = fetching
+                ? `${state.currentIndex + 1} / (${state.images.length}) ${state.count}`
+                : `${state.currentIndex + 1} / ${Math.max(state.images.length, 1)}`;
+            document.getElementById('remote-fetching-indicator').style.display = fetching ? 'block' : 'none';
             const skipBtn = document.getElementById('skip-button');
-
-            if (state.isRemote && state.remoteFetching) {
-                counter.textContent = `${state.currentIndex + 1} / (${state.images.length}) ${state.count}`;
-            } else {
-                counter.textContent = `${state.currentIndex + 1} / ${Math.max(state.images.length, 1)}`;
-            }
-
-            if (state.isRemote && state.remoteFetching) {
-                indicator.style.display = 'block';
-            } else {
-                indicator.style.display = 'none';
-            }
-
-            // While waiting for more remote images, disable skip to avoid the feeling of a broken button.
-            if (skipBtn) {
-                skipBtn.disabled = !!state.waitingForRemote;
-            }
+            if (skipBtn) skipBtn.disabled = !!state.waitingForRemote;
         }
-        
+
         function preloadImages(start, end) {
             for (let i = start; i <= end && i < state.images.length; i++) {
-                const img = new Image();
-                img.src = state.images[i].image_path;
+                new Image().src = state.images[i].image_path;
             }
         }
-        
+
         function startTimer() {
             clearInterval(state.timerInterval);
             state.startTime = Date.now();
             state.timerInterval = setInterval(updateTimer, 100);
         }
-        
+
         function updateTimer() {
             if (state.isPaused) return;
-            const elapsed = Date.now() - state.startTime - state.pausedTime;
+            const elapsed   = Date.now() - state.startTime - state.pausedTime;
             const remaining = state.duration * 1000 - elapsed;
-            const progress = Math.max(0, Math.min(100, (remaining / (state.duration * 1000)) * 100));
-            
-            // Update horizontal timer bar
+            const progress  = Math.max(0, Math.min(100, (remaining / (state.duration * 1000)) * 100));
+
             document.getElementById('timer-bar').style.width = progress + '%';
-            
-            // Update radial timer
+
             const circumference = 2 * Math.PI * 34;
-            const offset = circumference * (1 - progress / 100);
-            document.getElementById('timer-circle').style.strokeDasharray = circumference;
-            document.getElementById('timer-circle').style.strokeDashoffset = offset;
-            
-            // Update time text
-            const seconds = Math.ceil(remaining / 1000);
-            const mins = Math.floor(seconds / 60);
-            const secs = seconds % 60;
-            document.getElementById('timer-text').textContent = `${mins}:${secs.toString().padStart(2, '0')}`;
-            
-            if (remaining <= 0) {
-                nextImage();
-            }
+            document.getElementById('timer-circle').style.strokeDasharray  = circumference;
+            document.getElementById('timer-circle').style.strokeDashoffset = circumference * (1 - progress / 100);
+
+            const secs = Math.ceil(remaining / 1000);
+            document.getElementById('timer-text').textContent =
+                `${Math.floor(secs / 60)}:${(secs % 60).toString().padStart(2, '0')}`;
+
+            if (remaining <= 0) nextImage();
         }
-        
+
         function pauseTimer() {
             state.isPaused = true;
             state.pauseStartTime = Date.now();
             clearInterval(state.timerInterval);
-            document.getElementById('pause-button').style.display = 'none';
-            document.getElementById('play-button').style.display = 'flex';
+            setPauseUI(true);
         }
-        
+
         function resumeTimer() {
             state.isPaused = false;
             state.pausedTime += Date.now() - state.pauseStartTime;
             clearInterval(state.timerInterval);
             state.timerInterval = setInterval(updateTimer, 100);
-            document.getElementById('pause-button').style.display = 'flex';
-            document.getElementById('play-button').style.display = 'none';
+            setPauseUI(false);
         }
-        
+
         function nextImage() {
             const nextIndex = state.currentIndex + 1;
 
-            // Remote sessions can start with a few images and grow over time.
-            // If we reached the end of what’s loaded but the server is still fetching,
-            // hold here until more images arrive.
             if (state.isRemote && state.remoteFetching && nextIndex >= state.images.length) {
                 state.waitingForRemote = true;
                 state.currentIndex = Math.max(0, state.images.length - 1);
@@ -1361,245 +874,158 @@
             }
 
             state.currentIndex = nextIndex;
-
             if (state.currentIndex >= state.images.length) {
                 endSession();
             } else {
-                // Reset timer state for new image
                 state.pausedTime = 0;
                 state.startTime = Date.now();
-                
-                // Always resume timer when going to next image
                 if (state.isPaused) {
                     state.isPaused = false;
                     clearInterval(state.timerInterval);
                     state.timerInterval = setInterval(updateTimer, 100);
-                    document.getElementById('pause-button').style.display = 'flex';
-                    document.getElementById('play-button').style.display = 'none';
+                    setPauseUI(false);
                 }
-                
                 displayCurrentImage();
             }
         }
-        
+
         function endSession() {
             clearInterval(state.timerInterval);
             state.timerInterval = null;
-
             state.waitingForRemote = false;
-            
-            // Stop remote polling
             stopRemotePolling();
-            
-            // Reset pause state
             state.isPaused = false;
             state.pausedTime = 0;
-            document.getElementById('pause-button').style.display = 'flex';
-            document.getElementById('play-button').style.display = 'none';
-            
+            setPauseUI(false);
             disableThreshold();
-
-            // Clear image to prevent flash on next session
             document.getElementById('current-image').src = '';
-
-            if (state.useFullscreen) {
-                exitFullscreen();
-            }
-            
+            const btn = document.getElementById('threshold-toggle-button');
+            btn.disabled = false; btn.style.opacity = ''; btn.style.cursor = ''; btn.title = 'Toggle Threshold';
+            if (state.useFullscreen) exitFullscreen();
             showReviewScreen();
         }
-        
+
+        // ── Remote polling ─────────────────────────────────────
+
         function startRemotePolling() {
-            if (state.remotePollInterval) {
-                return; // Already polling
+            if (!state.remotePollInterval) {
+                state.remotePollInterval = setInterval(pollRemoteImages, 3000);
             }
-            
-            console.log('[Remote] Starting background image polling...');
-            state.remotePollInterval = setInterval(pollRemoteImages, 3000); // Poll every 3 seconds
         }
-        
+
         function stopRemotePolling() {
             if (state.remotePollInterval) {
                 clearInterval(state.remotePollInterval);
                 state.remotePollInterval = null;
-                console.log('[Remote] Stopped background image polling');
             }
         }
-        
+
         async function pollRemoteImages() {
             if (!state.remoteSessionId || !state.remoteFetching) {
                 stopRemotePolling();
                 return;
             }
-            
             try {
                 const response = await fetch(`/api/remote-session/${state.remoteSessionId}`);
                 const data = await response.json();
-                
+
                 if (data.success) {
-                    const oldCount = state.images.length;
-                    const newImages = data.images.slice(oldCount); // Only new images
-                    
+                    const newImages = data.images.slice(state.images.length);
                     if (newImages.length > 0) {
                         state.images.push(...newImages);
-                        console.log(`[Remote] Added ${newImages.length} more images (total: ${state.images.length})`);
-                        
-                        // Update counter immediately
-                        updateImageCounter();
-                        
-                        // Preload new images
-                        newImages.forEach(img => {
-                            const preload = new Image();
-                            preload.src = img.image_path;
-                        });
+                        newImages.forEach(img => { new Image().src = img.image_path; });
                     }
-                    
+
                     state.remoteFetching = data.fetching;
                     updateImageCounter();
 
-                    // If we were waiting at the end, continue automatically once we have more.
                     if (state.waitingForRemote && state.images.length > 0 && state.currentIndex < state.images.length - 1) {
                         state.waitingForRemote = false;
                         state.pausedTime = 0;
                         state.startTime = Date.now();
-                        if (!state.timerInterval) {
-                            state.timerInterval = setInterval(updateTimer, 100);
-                        }
+                        if (!state.timerInterval) state.timerInterval = setInterval(updateTimer, 100);
                         nextImage();
                     }
-                    
-                    if (!data.fetching) {
-                        console.log(`[Remote] Background fetch complete. Total: ${state.images.length} images`);
-                        stopRemotePolling();
-                    }
+
+                    if (!data.fetching) stopRemotePolling();
                 }
             } catch (error) {
                 console.error('[Remote] Polling error:', error);
             }
         }
-        
+
+        // ── Favorites ──────────────────────────────────────────
+
         async function toggleFavorite(index, isFullscreen = false) {
             const image = state.images[index];
+            if (!image || (image.is_remote && image.favorited)) return;
 
-            if (!image) {
-                return;
-            }
-
-            // For remote images, treat favorite as "save" (avoid duplicating imports).
-            if (image.is_remote && image.favorited) {
-                return;
-            }
-            
             try {
-                const requestBody = {
-                    is_remote: image.is_remote || false
-                };
-                
+                const requestBody = { is_remote: image.is_remote || false };
                 if (image.is_remote) {
-                    // Remote image - send full data to copy to Eagle library
                     requestBody.image_data = image;
                     requestBody.session_id = state.remoteSessionId;
-                    console.log('[Favorite] Sending remote image with:', {
-                        is_remote: requestBody.is_remote,
-                        image_id: image.id,
-                        source: image.source,
-                        session_id: state.remoteSessionId
-                    });
                 } else {
-                    // Local image - just send folder
                     requestBody.folder = image.folder;
-                    console.log('[Favorite] Sending local image:', image.folder);
                 }
-                
+
                 const response = await fetch('/api/favorite', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(requestBody)
                 });
-                
                 const data = await response.json();
-                
+
                 if (data.success) {
                     image.favorited = data.favorited;
                     updateFavoriteButton(isFullscreen);
-                    
-                    if (image.is_remote && data.favorited) {
-                        console.log(`[Favorite] Saved remote image to Eagle library: ${data.eagle_folder}`);
-                        if (!data.already_imported) {
-                            alert('✓ Saved to Eagle imports');
-                        }
+                    if (image.is_remote && data.favorited && !data.already_imported) {
+                        alert('\u2713 Saved to Eagle imports');
                     }
                 } else {
-                    console.error('Favorite failed:', data.error);
                     alert(`Could not save favorite: ${data.error}`);
                 }
             } catch (error) {
                 console.error('Error toggling favorite:', error);
             }
         }
-        
+
         function updateFavoriteButton(isFullscreen = false) {
-            const btnId = isFullscreen ? 'fullscreen-favorite-button' : 'favorite-button';
-            const btn = document.getElementById(btnId);
+            const btn   = document.getElementById(isFullscreen ? 'fullscreen-favorite-button' : 'favorite-button');
             const image = state.images[isFullscreen ? state.reviewIndex : state.currentIndex];
-
-            if (!image) {
-                btn.classList.remove('favorited');
-                btn.textContent = '☆';
-                return;
-            }
-
-            const tags = image.tags || [];
-            
-            if (image.favorited || tags.includes('study-favorite')) {
-                btn.classList.add('favorited');
-                btn.textContent = '★';
-            } else {
-                btn.classList.remove('favorited');
-                btn.textContent = '☆';
-            }
+            if (!image) { btn.classList.remove('favorited'); btn.textContent = '\u2606'; return; }
+            const isFav = image.favorited || (image.tags || []).includes('study-favorite');
+            btn.classList.toggle('favorited', isFav);
+            btn.textContent = isFav ? '\u2605' : '\u2606';
         }
 
-        function updateFavoriteVisibility() {
-            const favoriteBtn = document.getElementById('favorite-button');
-            const fullscreenFavoriteBtn = document.getElementById('fullscreen-favorite-button');
+        // ── Review Screen ──────────────────────────────────────
 
-            // Always show favorite button (works for both local and remote)
-            favoriteBtn.classList.remove('hidden');
-            fullscreenFavoriteBtn.classList.remove('hidden');
-        }
-        
         function setupReviewScreen() {
-            // Setup panzoom on fullscreen image
-            const fullscreenImg = document.getElementById('fullscreen-image');
+            const fullscreenImg       = document.getElementById('fullscreen-image');
             const fullscreenContainer = document.getElementById('fullscreen-review');
+
             const panzoomInstance = Panzoom(document.getElementById('fullscreen-content'), {
-                maxScale: 6,
-                minScale: 1,
-                contain: 'outside',
-                cursor: 'grab',
-                pinchAndPan: true,
-                startScale: 1,
-                animate: false
+                maxScale: 6, minScale: 1, contain: 'outside',
+                cursor: 'grab', pinchAndPan: true, startScale: 1, animate: false
             });
-            
-            // Enable zoom with mouse wheel and pinch gestures
+
             fullscreenImg.parentElement.addEventListener('wheel', (e) => {
-                if (state.fullscreenReviewLocked) {
-                    e.preventDefault();
-                    return;
-                }
+                if (state.fullscreenReviewLocked) { e.preventDefault(); return; }
                 panzoomInstance.zoomWithWheel(e);
             }, { passive: false });
 
-            // Lock/unlock pan/zoom and all touch on the fullscreen review surface.
-            const lockBtn = document.getElementById('fullscreen-lock-button');
-            const LOCKED_SVG = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"></rect><path d="M8 11V8a4 4 0 0 1 8 0v3"></path><path d="M12 16v2"></path></svg>';
+            fullscreenImg.addEventListener('load', () => panzoomInstance.reset());
+
+            // Lock / unlock pan+zoom
+            const lockBtn      = document.getElementById('fullscreen-lock-button');
+            const LOCKED_SVG   = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"></rect><path d="M8 11V8a4 4 0 0 1 8 0v3"></path><path d="M12 16v2"></path></svg>';
             const UNLOCKED_SVG = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"></rect><path d="M8 11V8a4 4 0 0 1 7.5-2"></path><path d="M12 16v2"></path></svg>';
+
             const syncLockUi = () => {
                 const locked = !!state.fullscreenReviewLocked;
                 lockBtn.innerHTML = locked ? LOCKED_SVG : UNLOCKED_SVG;
-                lockBtn.setAttribute('aria-pressed', locked ? 'true' : 'false');
+                lockBtn.setAttribute('aria-pressed', String(locked));
                 lockBtn.setAttribute('aria-label', locked ? 'Unlock pan and zoom' : 'Lock pan and zoom');
                 lockBtn.title = locked ? 'Unlock pan/zoom' : 'Lock pan/zoom';
             };
@@ -1608,54 +1034,31 @@
             const setFullscreenReviewLocked = (locked) => {
                 state.fullscreenReviewLocked = !!locked;
                 if (typeof panzoomInstance.setOptions === 'function') {
-                    panzoomInstance.setOptions({
-                        disablePan: state.fullscreenReviewLocked,
-                        disableZoom: state.fullscreenReviewLocked
-                    });
+                    panzoomInstance.setOptions({ disablePan: state.fullscreenReviewLocked, disableZoom: state.fullscreenReviewLocked });
                 }
                 syncLockUi();
             };
-
-            // Make it accessible from other handlers (e.g. when opening/closing fullscreen review)
             state.setFullscreenReviewLocked = setFullscreenReviewLocked;
 
-            lockBtn.addEventListener('click', () => {
-                setFullscreenReviewLocked(!state.fullscreenReviewLocked);
-            });
-
-            const shouldBlockReviewInteraction = (e) => {
-                if (!state.fullscreenReviewLocked) {
-                    return false;
-                }
-                if (e.target && e.target.closest && e.target.closest('button')) {
-                    return false;
-                }
-                return true;
-            };
+            lockBtn.addEventListener('click', () => setFullscreenReviewLocked(!state.fullscreenReviewLocked));
 
             ['pointerdown', 'pointermove', 'touchstart', 'touchmove', 'gesturestart', 'gesturechange', 'gestureend', 'wheel']
-                .forEach((eventName) => {
+                .forEach(eventName => {
                     fullscreenContainer.addEventListener(eventName, (e) => {
-                        if (!shouldBlockReviewInteraction(e)) {
-                            return;
-                        }
+                        if (!state.fullscreenReviewLocked) return;
+                        if (e.target && e.target.closest && e.target.closest('button')) return;
                         e.preventDefault();
                         e.stopImmediatePropagation();
                     }, { capture: true, passive: false });
                 });
-            
-            // Reset zoom when image loads
-            fullscreenImg.addEventListener('load', () => {
-                panzoomInstance.reset();
-            });
-            
+
             document.getElementById('new-session-button').addEventListener('click', async () => {
                 await cleanupRemoteSessionIfNeeded();
                 showScreen('start');
                 document.body.classList.remove('study-mode');
                 document.getElementById('start-button').textContent = 'Start Session';
             });
-            
+
             document.getElementById('back-button').addEventListener('click', () => {
                 disableThreshold();
                 screens.fullscreen.style.display = 'none';
@@ -1663,69 +1066,53 @@
                 panzoomInstance.reset();
                 document.getElementById('threshold-controls').classList.add('hidden');
             });
-            
+
             document.getElementById('fullscreen-favorite-button').addEventListener('click', () => {
                 toggleFavorite(state.reviewIndex, true);
             });
-            
+
             document.getElementById('fullscreen-review-toggle').addEventListener('click', () => {
-                if (document.fullscreenElement) {
-                    exitFullscreen();
-                } else {
-                    enterFullscreen();
-                }
+                document.fullscreenElement ? exitFullscreen() : enterFullscreen();
             });
         }
-        
+
         function showReviewScreen() {
             const grid = document.getElementById('thumbnail-grid');
             grid.innerHTML = '';
-            
+
             state.images.forEach((image, index) => {
                 const item = document.createElement('div');
                 item.className = 'thumbnail-item';
-                
+
                 const img = document.createElement('img');
-                // Use thumbnail if available, otherwise use full image
                 img.src = image.thumbnail_path || image.image_path;
                 img.alt = image.name;
-                
-                // Handle thumbnail load errors by falling back to full image
-                img.onerror = function() {
-                    if (this.src !== image.image_path) {
-                        this.src = image.image_path;
-                    }
-                };
-                
+                img.onerror = function() { if (this.src !== image.image_path) this.src = image.image_path; };
                 item.appendChild(img);
-                
-                const tags = image.tags || [];
-                if (image.favorited || tags.includes('study-favorite')) {
+
+                if (image.favorited || (image.tags || []).includes('study-favorite')) {
                     const badge = document.createElement('span');
                     badge.className = 'star-badge';
-                    badge.textContent = '★';
+                    badge.textContent = '\u2605';
                     item.appendChild(badge);
                 }
-                
-                item.addEventListener('click', () => {
-                    showFullscreenReview(index);
-                });
-                
+
+                item.addEventListener('click', () => showFullscreenReview(index));
                 grid.appendChild(item);
             });
-            
+
             showScreen('review');
             document.body.classList.remove('study-mode');
         }
-        
+
         function showFullscreenReview(index) {
             state.reviewIndex = index;
-            const image = state.images[index];
-            const img = document.getElementById('fullscreen-image');
+            const image  = state.images[index];
+            const img    = document.getElementById('fullscreen-image');
             const canvas = document.getElementById('threshold-review-canvas');
 
             state._thresholdCache = { data: null, w: 0, h: 0 };
-            img.style.display = '';
+            img.style.display    = '';
             canvas.style.display = 'none';
             img.src = image.image_path;
 
@@ -1734,23 +1121,18 @@
             } else {
                 state.fullscreenReviewLocked = false;
             }
+
             updateFavoriteButton(true);
-            updateFavoriteVisibility();
             screens.fullscreen.style.display = 'block';
             document.getElementById('threshold-controls').classList.remove('hidden');
-            document.getElementById('fullscreen-toggle-button').style.display = 'none';
-            document.getElementById('fullscreen-review-toggle').style.display = 'flex';
+            document.getElementById('fullscreen-toggle-button').style.display  = 'none';
+            document.getElementById('fullscreen-review-toggle').style.display  = 'flex';
 
-            if (state.thresholdEnabled) {
-                showThreshold(img, canvas);
-            }
+            if (state.thresholdEnabled) showThreshold(img, canvas);
         }
 
         async function cleanupRemoteSessionIfNeeded() {
-            if (!state.remoteSessionId) {
-                return;
-            }
-
+            if (!state.remoteSessionId) return;
             try {
                 await fetch('/api/remote-session/cleanup', {
                     method: 'POST',
@@ -1764,62 +1146,50 @@
                 state.isRemote = false;
             }
         }
-        
+
         function showScreen(name) {
             Object.values(screens).forEach(screen => screen.style.display = 'none');
             screens[name].style.display = name === 'start' ? 'flex' : 'block';
             const tc = document.getElementById('threshold-controls');
             if (name === 'study') {
                 tc.classList.remove('hidden');
-                document.getElementById('fullscreen-toggle-button').style.display = '';
-                document.getElementById('fullscreen-review-toggle').style.display = 'none';
+                document.getElementById('fullscreen-toggle-button').style.display  = '';
+                document.getElementById('fullscreen-review-toggle').style.display  = 'none';
             } else {
                 tc.classList.add('hidden');
             }
         }
 
-        // ---- Threshold Effect ----
+        // ── Threshold Effect ───────────────────────────────────
+
         function getActiveDisplayImage() {
-            if (screens.fullscreen.style.display === 'block') {
-                return document.getElementById('fullscreen-image');
-            }
-            if (screens.study.style.display === 'block') {
-                return document.getElementById('current-image');
-            }
+            if (screens.fullscreen.style.display === 'block') return document.getElementById('fullscreen-image');
+            if (screens.study.style.display === 'block')      return document.getElementById('current-image');
             return null;
         }
 
         function getActiveCanvas() {
-            if (screens.fullscreen.style.display === 'block') {
-                return document.getElementById('threshold-review-canvas');
-            }
-            if (screens.study.style.display === 'block') {
-                return document.getElementById('threshold-study-canvas');
-            }
+            if (screens.fullscreen.style.display === 'block') return document.getElementById('threshold-review-canvas');
+            if (screens.study.style.display === 'block')      return document.getElementById('threshold-study-canvas');
             return null;
         }
 
         function applyThresholdToCanvas(img, canvas) {
-            // First call for a given image: draw to canvas, cache original pixels, apply threshold
-            canvas.width = img.naturalWidth;
+            canvas.width  = img.naturalWidth;
             canvas.height = img.naturalHeight;
             const ctx = canvas.getContext('2d');
             ctx.drawImage(img, 0, 0);
             try {
                 const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-                state._thresholdCache = {
-                    data: new Uint8ClampedArray(imageData.data),
-                    w: canvas.width,
-                    h: canvas.height
-                };
-                const d = imageData.data;
+                state._thresholdCache = { data: new Uint8ClampedArray(imageData.data), w: canvas.width, h: canvas.height };
+                const d   = imageData.data;
                 const thr = state.thresholdValue;
                 for (let i = 0; i < d.length; i += 4) {
                     const v = (0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]) >= thr ? 255 : 0;
                     d[i] = v; d[i + 1] = v; d[i + 2] = v;
                 }
                 ctx.putImageData(imageData, 0, 0);
-                img.style.display = 'none';
+                img.style.display    = 'none';
                 canvas.style.display = 'block';
             } catch (e) {
                 console.error('Threshold failed:', e);
@@ -1827,7 +1197,6 @@
         }
 
         function applyThresholdFromCache(canvas) {
-            // Slider path: copy cached pixels, threshold loop, putImageData — no I/O, no encoding
             const cache = state._thresholdCache;
             if (!cache.data) return;
             const out = new Uint8ClampedArray(cache.data);
@@ -1845,9 +1214,7 @@
             state._thresholdDebounce = requestAnimationFrame(() => {
                 state._thresholdDebounce = null;
                 const canvas = getActiveCanvas();
-                if (canvas && state._thresholdCache.data) {
-                    applyThresholdFromCache(canvas);
-                }
+                if (canvas && state._thresholdCache.data) applyThresholdFromCache(canvas);
             });
         }
 
@@ -1861,7 +1228,7 @@
 
         function hideThreshold(img, canvas) {
             canvas.style.display = 'none';
-            img.style.display = '';
+            img.style.display    = '';
         }
 
         function disableThreshold() {
@@ -1870,29 +1237,39 @@
             document.getElementById('threshold-toggle-button').classList.remove('active');
             document.getElementById('threshold-bar').classList.remove('active');
             state._thresholdCache = { data: null, w: 0, h: 0 };
-            const img = getActiveDisplayImage();
-            const canvas = getActiveCanvas();
+            const img = getActiveDisplayImage(), canvas = getActiveCanvas();
             if (img && canvas) hideThreshold(img, canvas);
+        }
+
+        function updateThresholdButtonState() {
+            const btn = document.getElementById('threshold-toggle-button');
+            if (state.source === 'unsplash') {
+                btn.disabled = true;
+                btn.style.opacity = '0.5';
+                btn.style.cursor = 'not-allowed';
+                btn.title = 'Threshold unavailable for Unsplash images';
+            } else {
+                btn.disabled = false;
+                btn.style.opacity = '';
+                btn.style.cursor = '';
+                btn.title = 'Toggle Threshold';
+            }
         }
 
         function setupThresholdControls() {
             document.getElementById('threshold-toggle-button').addEventListener('click', (e) => {
                 e.stopPropagation();
+                if (state.source === 'unsplash' && !state.thresholdEnabled) {
+                    alert('Threshold is not available for Unsplash images due to browser security restrictions.');
+                    return;
+                }
                 state.thresholdEnabled = !state.thresholdEnabled;
-                const btn = document.getElementById('threshold-toggle-button');
-                const bar = document.getElementById('threshold-bar');
-                const img = getActiveDisplayImage();
-                const canvas = getActiveCanvas();
-                if (state.thresholdEnabled) {
-                    btn.classList.add('active');
-                    bar.classList.add('active');
-                    state._thresholdCache = { data: null, w: 0, h: 0 };
-                    if (img && canvas) showThreshold(img, canvas);
-                } else {
-                    btn.classList.remove('active');
-                    bar.classList.remove('active');
-                    state._thresholdCache = { data: null, w: 0, h: 0 };
-                    if (img && canvas) hideThreshold(img, canvas);
+                document.getElementById('threshold-toggle-button').classList.toggle('active', state.thresholdEnabled);
+                document.getElementById('threshold-bar').classList.toggle('active', state.thresholdEnabled);
+                state._thresholdCache = { data: null, w: 0, h: 0 };
+                const img = getActiveDisplayImage(), canvas = getActiveCanvas();
+                if (img && canvas) {
+                    state.thresholdEnabled ? showThreshold(img, canvas) : hideThreshold(img, canvas);
                 }
             });
 
@@ -1903,9 +1280,7 @@
                 refreshThreshold();
             });
 
-            document.getElementById('threshold-slider').addEventListener('pointerup', (e) => {
-                e.target.blur();
-            });
+            document.getElementById('threshold-slider').addEventListener('pointerup', (e) => e.target.blur());
         }
     </script>
 </body>

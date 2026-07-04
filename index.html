@@ -344,6 +344,29 @@
             z-index: 2001;
         }
 
+        /* ── HQ button (fullscreen Croquis review) ───────────── */
+        #hq-load-button {
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            z-index: 2001;
+            padding: 0 16px;
+            height: 44px;
+            background: rgba(40,44,47,0.85);
+            color: #EAE6D3;
+            border: 2px solid #5F544C;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.8rem;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            transition: border-color 0.2s, color 0.2s;
+        }
+        #hq-load-button:hover:not(:disabled) { border-color: #4998AE; color: #4998AE; }
+        #hq-load-button:active { transform: scale(0.96); }
+        #hq-load-button:disabled { opacity: 0.5; cursor: not-allowed; }
+        #hq-load-button.loaded { border-color: #4998AE; color: #4998AE; }
+
         /* ── Utilities ────────────────────────────────────────── */
         .hidden { display: none !important; }
         .no-fullscreen-support { display: none !important; }
@@ -394,6 +417,8 @@
 
         /* ── Phone layout: bottom navigation ─────────────────── */
         @media (max-width: 600px) {
+            .button-group button { min-width: 0; font-size: 0.9rem; padding: 0.7rem 0.4rem; }
+
             #image-container { padding: 20px 20px 120px; }
 
             #study-controls {
@@ -418,6 +443,11 @@
             /* Hide fullscreen buttons — phones are already fullscreen */
             #fullscreen-toggle-button,
             #fullscreen-review-toggle { display: none !important; }
+
+            /* Hide threshold toggle behind the bottom nav bar by default;
+               show it only when the user has tapped to hide the controls */
+            #threshold-toggle-button { display: none; }
+            body.controls-hidden #threshold-toggle-button { display: flex; }
         }
     </style>
 </head>
@@ -457,7 +487,18 @@
                 <button data-source="unsplash">Unsplash People</button>
                 <button data-source="croquis">Croquis Café</button>
             </div>
-            <div class="settings-hint">Wikimedia and Unsplash use remote photos. Wikimedia cache is cleared after the session. Croquis Café requires a valid cookies file configured on the server.</div>
+            <div id="source-hint-wikimedia" class="settings-hint" style="display:none">Wikimedia pulls random public-domain photos. The cache is cleared after the session.</div>
+            <div id="source-hint-unsplash" class="settings-hint" style="display:none">Unsplash photos fetched via API. Requires an Unsplash access key in config.</div>
+            <div id="source-hint-croquis" class="settings-hint" style="display:none">Croquis Café requires a valid cookies file (or credentials) configured on the server.</div>
+        </div>
+
+        <div class="settings-group" id="packs-group">
+            <label>Photo Packs</label>
+            <div class="button-group">
+                <button data-packs="1">1 Pack</button>
+                <button data-packs="3">3 Packs</button>
+                <button data-packs="all" class="selected">All Packs</button>
+            </div>
         </div>
 
         <div class="settings-group" id="categories-group">
@@ -550,6 +591,7 @@
         <button id="back-button"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg> Back</button>
         <button id="fullscreen-favorite-button" class="fav-btn">\u2606</button>
         <button id="fullscreen-lock-button" class="icon-btn" title="Lock pan/zoom" aria-pressed="false" aria-label="Lock pan and zoom"></button>
+        <button id="hq-load-button" title="Load full-resolution image" style="display:none"></button>
         <div id="fullscreen-content">
             <img id="fullscreen-image" alt="Review image">
             <canvas id="threshold-review-canvas"></canvas>
@@ -563,6 +605,7 @@
             count: 20,
             enabledTags: new Set(['figure', 'handsfeet', 'costumes', 'portraits']),
             source: 'local',
+            packMode: 'all',
             useFullscreen: true,
             images: [],
             currentIndex: 0,
@@ -659,6 +702,7 @@
             });
 
             pickButton('[data-count]',      btn => { state.count        = parseInt(btn.dataset.count); });
+            pickButton('[data-packs]',       btn => { state.packMode    = btn.dataset.packs; });
             document.querySelectorAll('[data-tag]').forEach(btn => {
                 btn.addEventListener('click', () => {
                     const tag = btn.dataset.tag;
@@ -672,7 +716,7 @@
                     updateStartButton();
                 });
             });
-            pickButton('[data-source]',     btn => { state.source = btn.dataset.source; updatePracticeAvailability(); });
+            pickButton('[data-source]',     btn => { state.source = btn.dataset.source; updatePracticeAvailability(); updateSourceHint(); });
             pickButton('[data-fullscreen]', btn => { state.useFullscreen = btn.dataset.fullscreen === 'true'; });
 
             document.getElementById('start-button').addEventListener('click', startSession);
@@ -689,7 +733,15 @@
         function updatePracticeAvailability() {
             const isLocal = state.source === 'local';
             document.getElementById('categories-group').style.display = isLocal ? '' : 'none';
+            document.getElementById('packs-group').style.display = isLocal ? '' : 'none';
             updateStartButton();
+        }
+
+        function updateSourceHint() {
+            ['wikimedia', 'unsplash', 'croquis'].forEach(src => {
+                const el = document.getElementById('source-hint-' + src);
+                if (el) el.style.display = (state.source === src) ? '' : 'none';
+            });
         }
 
         async function startSession() {
@@ -711,7 +763,7 @@
 
                 const endpoint = isRemoteSource
                     ? `/api/remote-session?count=${state.count}&source=${encodeURIComponent(state.source)}`
-                    : `/api/session?count=${state.count}&enabled_tags=${encodeURIComponent([...state.enabledTags].join(','))}`;
+                    : `/api/session?count=${state.count}&enabled_tags=${encodeURIComponent([...state.enabledTags].join(','))}&packs=${encodeURIComponent(state.packMode)}`;
 
                 const response = await fetch(endpoint);
                 const data = await response.json();
@@ -763,6 +815,15 @@
                 document.getElementById('study-controls').classList.toggle('hidden', !show);
                 document.getElementById('favorite-button').classList.toggle('hidden', !show);
                 document.getElementById('fullscreen-toggle-button').classList.toggle('hidden', !show);
+                document.body.classList.toggle('controls-hidden', !show);
+                // When restoring controls, collapse the threshold bar (it lives outside the nav)
+                if (show) {
+                    document.getElementById('threshold-bar').classList.remove('active');
+                    document.getElementById('threshold-toggle-button').classList.remove('active');
+                    state.thresholdEnabled = false;
+                    const img = getActiveDisplayImage(), canvas = getActiveCanvas();
+                    if (img && canvas) hideThreshold(img, canvas);
+                }
             });
 
             document.getElementById('pause-button').addEventListener('click', pauseTimer);
@@ -1056,6 +1117,8 @@
                 await cleanupRemoteSessionIfNeeded();
                 showScreen('start');
                 document.body.classList.remove('study-mode');
+                document.body.classList.remove('controls-hidden');
+                state.controlsVisible = true;
                 document.getElementById('start-button').textContent = 'Start Session';
             });
 
@@ -1073,6 +1136,42 @@
 
             document.getElementById('fullscreen-review-toggle').addEventListener('click', () => {
                 document.fullscreenElement ? exitFullscreen() : enterFullscreen();
+            });
+
+            // HQ on-demand button (Croquis only)
+            const hqBtn = document.getElementById('hq-load-button');
+            hqBtn.addEventListener('click', async () => {
+                const image = state.images[state.reviewIndex];
+                if (!image || image.source !== 'croquis' || !state.remoteSessionId) return;
+
+                hqBtn.textContent = 'Loading…';
+                hqBtn.disabled = true;
+
+                try {
+                    const resp = await fetch(
+                        `/api/croquis-hq/${state.remoteSessionId}?id=${encodeURIComponent(image.id)}`
+                    );
+                    const data = await resp.json();
+                    if (data.success) {
+                        image.hq_path = data.hq_path;
+                        const img    = document.getElementById('fullscreen-image');
+                        const canvas = document.getElementById('threshold-review-canvas');
+                        state._thresholdCache = { data: null, w: 0, h: 0 };
+                        canvas.style.display = 'none';
+                        img.style.display    = '';
+                        img.src = data.hq_path;
+                        if (state.thresholdEnabled) showThreshold(img, canvas);
+                        hqBtn.textContent = 'HQ ✓';
+                        hqBtn.classList.add('loaded');
+                    } else {
+                        hqBtn.textContent = 'HQ';
+                        hqBtn.disabled = false;
+                        alert(`Could not load HQ: ${data.error}`);
+                    }
+                } catch (e) {
+                    hqBtn.textContent = 'HQ';
+                    hqBtn.disabled = false;
+                }
             });
         }
 
@@ -1103,6 +1202,8 @@
 
             showScreen('review');
             document.body.classList.remove('study-mode');
+            document.body.classList.remove('controls-hidden');
+            state.controlsVisible = true;
         }
 
         function showFullscreenReview(index) {
@@ -1127,6 +1228,13 @@
             document.getElementById('threshold-controls').classList.remove('hidden');
             document.getElementById('fullscreen-toggle-button').style.display  = 'none';
             document.getElementById('fullscreen-review-toggle').style.display  = 'flex';
+
+            const hqBtn = document.getElementById('hq-load-button');
+            const showHq = image.source === 'croquis' && !!state.remoteSessionId && !image.hq_path;
+            hqBtn.style.display = showHq ? '' : 'none';
+            hqBtn.textContent = 'HQ';
+            hqBtn.disabled = false;
+            hqBtn.classList.remove('loaded');
 
             if (state.thresholdEnabled) showThreshold(img, canvas);
         }

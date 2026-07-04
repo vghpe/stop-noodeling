@@ -7,6 +7,7 @@ Serves the web interface and provides API endpoints for the Eagle library
 import http.server
 import socketserver
 import json
+import math
 import os
 import re
 import random
@@ -30,11 +31,6 @@ try:
     from PIL import Image  # type: ignore
 except Exception:
     Image = None
-
-try:
-    from bs4 import BeautifulSoup as _BeautifulSoup  # type: ignore
-except ImportError:
-    _BeautifulSoup = None
 
 # Configuration
 def load_config():
@@ -107,6 +103,11 @@ CROQUIS_USERNAME: Optional[str] = str(_croquis_username_raw).strip() if _croquis
 _croquis_password_raw = CONFIG.get('croquis_password')
 CROQUIS_PASSWORD: Optional[str] = str(_croquis_password_raw) if _croquis_password_raw else None
 
+# In-memory cache for the Croquis model list — avoids re-fetching on every session start
+_croquis_model_cache: Optional[Tuple[float, List[dict]]] = None
+_croquis_model_cache_lock = threading.Lock()
+CROQUIS_MODEL_CACHE_TTL_SECONDS = 3600
+
 # Remote cache retention
 # - TTL is a safety net: sessions normally clean up when the client requests it
 # - We use the remote session directory mtime as the source of truth and "touch"
@@ -143,33 +144,6 @@ UNSPLASH_QUERY_VARIANTS = (
     'lifestyle portrait',
     'people portrait'
 )
-
-CROQUIS_MODELS: List[str] = [
-    "aaron","alfie","alice","allyson","alora","amarutta","amedea","ameeka",
-    "anais","anderson","andrew","angela","angelique","arcana","artistic-physique",
-    "astrid","astrid-and-flora","aubrey","august","bailey","barbara","beatrice",
-    "bebe","bella","bella-donna","brie","britagne","brynna","caroline","catlin",
-    "chelsea-jo","chelsey","clara","connor","courtney","cwen","cwen-and-joe",
-    "dan","daphne","david","denisa","dessa","dwayne","elena","emily","emma-grace",
-    "erin","esmeralda","felicia","flora","flower-jones","gabrielle","gabrielle-dan",
-    "grace","greg","hannah-jay","heather","heff","helen","helen-luke","helen-troy",
-    "ivy","izaora","izzy","january","jaynie","jazmine","jennifer","jessamyne",
-    "jessa-ray","jessica","jessica-dawn","jhene","joe","johana","john","jorgie",
-    "joseph","juliet","kammeron","karma","katarina","katlin","kay","kayla",
-    "kaylee","keira-grant","keira-leilani","keith","kendell","kerri","kevin",
-    "kitty","kris","kristine","krystina-marie","lauren","laurent","lavivie",
-    "lea-deru","lea-pivin","lea-zoe","lilith","lisa","lizzy-lamb","lola","luke",
-    "madeline","madison","madison-oakley","manu","margaret","marina","mark",
-    "mary","masha","melissa","melody","mel-shola","melvin","meredith-rose",
-    "mike","mikym","monique","natasha","nathan","neil","nika","nova-amour",
-    "olivier","parker","pepper","rachel-lilly","ralph","raven","regina","rhus",
-    "riya","roarie","rose","roseanne","rose-of-venus","roxanne","ruby",
-    "ryeland-marie","sage","samantha","sarah","sarah-b","sarah-j","saturn",
-    "selva","silvy","simone","stephen","sunshine","tae","tamara","taylor",
-    "thomas","tiffany","tigger","tom","toniann","unique","vex-voir","vincent",
-    "violet-pixie","vivian","wendy","willow","woolphie","xaina","yohoi","yuji","zoe",
-]
-
 
 def now_ms() -> int:
     return int(time.time() * 1000)
@@ -890,28 +864,7 @@ def fetch_wikimedia_photos_initial(count: int, session_id: str, session_dir: Pat
 # Croquis Café source
 # ---------------------------------------------------------------------------
 
-CROQUIS_CDN = "cdn.croquis.cafe"
-CROQUIS_MAX_LONG_EDGE = 2048  # target: largest variant whose long edge ≤ this
 CROQUIS_LOGIN_URL = "https://croquis.cafe/my-account/"
-CROQUIS_EXCLUDED_FILENAME_PARTS = (
-    "logo",
-    "favicon",
-    "icon",
-    "cropped-croquis",
-    "apple-touch",
-    "android-chrome",
-    "site-icon",
-)
-
-
-def _is_croquis_content_url(url: str) -> bool:
-    if CROQUIS_CDN not in url:
-        return False
-    lowered = url.lower()
-    if not lowered.endswith((".jpg", ".jpeg", ".png", ".webp")):
-        return False
-    filename = lowered.rsplit("/", 1)[-1]
-    return not any(part in filename for part in CROQUIS_EXCLUDED_FILENAME_PARTS)
 
 
 def _build_croquis_opener(jar: MozillaCookieJar):
@@ -1009,63 +962,87 @@ def get_croquis_opener():
     return _build_croquis_opener(jar)
 
 
-def _pick_best_croquis_url(variants: Dict[str, Tuple[int, int]]) -> str:
-    """Pick the URL whose long edge is ≤ CROQUIS_MAX_LONG_EDGE and is maximised."""
-    cap = CROQUIS_MAX_LONG_EDGE
-    below = {url: max(w, h) for url, (w, h) in variants.items() if max(w, h) <= cap}
-    if below:
-        return max(below, key=below.__getitem__)
-    # All variants exceed cap — return the smallest one
-    return min(variants, key=lambda u: max(variants[u]))
+CROQUIS_API_BASE = "https://croquis.cafe/wp-json/wp/v2"
+CROQUIS_PREFERRED_SIZES = ("large", "medium_large", "medium")  # in preference order
+CROQUIS_FINE_ARTS_CAT_ID = 1424  # "Fine Arts Photos" taxonomy term — filters out landscapes/still life
 
 
-def scrape_croquis_model_urls(model_slug: str, opener) -> List[str]:
+def _croquis_best_size_url(media_item: dict) -> Optional[str]:
+    """Return the best usable image URL from a WP REST media item."""
+    sizes = media_item.get("media_details", {}).get("sizes", {})
+    for sz in CROQUIS_PREFERRED_SIZES:
+        if sz in sizes:
+            return sizes[sz].get("source_url")
+    # Fall back to full/original
+    return media_item.get("source_url")
+
+
+def fetch_croquis_model_list(opener) -> List[dict]:
     """
-    Scrape a model gallery page and return one best-size URL per unique image.
-    Only size-suffixed CDN variants are collected; originals (no suffix) are skipped.
+    Fetch all active model taxonomy terms from the WP REST API.
+    Returns list of dicts with keys: id, slug, name, count.
+    Page 1 is fetched first to determine total_pages; remaining pages are fetched in parallel.
     """
-    page_url = f"https://croquis.cafe/image-cats/fine-arts-poses/?croq_model_name={urllib.parse.quote(model_slug)}"
+    def _fetch_page(page: int) -> Tuple[List[dict], int]:
+        url = f"{CROQUIS_API_BASE}/croq_model_name?per_page=100&page={page}&_fields=id,slug,name,count"
+        try:
+            with opener.open(urllib.request.Request(url), timeout=15) as resp:
+                batch = json.loads(resp.read())
+                total = int(resp.headers.get("X-WP-TotalPages", 1))
+                return batch, total
+        except Exception as e:
+            print(f"[Croquis] Failed to fetch model list page {page}: {e}")
+            return [], 1
+
+    first_batch, total_pages = _fetch_page(1)
+    all_models: List[dict] = list(first_batch)
+
+    if total_pages > 1:
+        with ThreadPoolExecutor(max_workers=min(total_pages - 1, 5)) as ex:
+            for batch, _ in ex.map(_fetch_page, range(2, total_pages + 1)):
+                all_models.extend(batch)
+
+    return [m for m in all_models if m.get("count", 0) > 0]
+
+
+def _get_croquis_models_cached(opener) -> List[dict]:
+    """Return model list from in-memory cache, re-fetching if stale or absent."""
+    global _croquis_model_cache
+    with _croquis_model_cache_lock:
+        if _croquis_model_cache is not None:
+            ts, models = _croquis_model_cache
+            if time.time() - ts < CROQUIS_MODEL_CACHE_TTL_SECONDS:
+                print(f"[Croquis] Using cached model list ({len(models)} models)")
+                return models
+    models = fetch_croquis_model_list(opener)
+    with _croquis_model_cache_lock:
+        _croquis_model_cache = (time.time(), models)
+    return models
+
+
+def fetch_croquis_model_urls(model: dict, opener, per_page: int = 30) -> List[str]:
+    """
+    Fetch image URLs for a model via the WP REST media API.
+    Picks a random page so repeated calls yield variety.
+    """
+    total_count = model.get("count", per_page)
+    total_pages = max(1, math.ceil(total_count / per_page))
+    rand_page = random.randint(1, total_pages)
+    url = (
+        f"{CROQUIS_API_BASE}/media"
+        f"?croq_model_name={model['id']}&per_page={per_page}&page={rand_page}"
+        f"&_fields=id,source_url,media_details,croq_image_cats"
+    )
     try:
-        with opener.open(urllib.request.Request(page_url), timeout=15) as resp:
-            page_html = resp.read().decode("utf-8", errors="replace")
+        with opener.open(urllib.request.Request(url), timeout=15) as resp:
+            items = json.loads(resp.read())
     except Exception as e:
-        print(f"[Croquis] Scrape failed for {model_slug}: {e}")
+        print(f"[Croquis] Failed to fetch images for {model['slug']}: {e}")
         return []
-
-    raw_urls: Set[str] = set()
-    if _BeautifulSoup is not None:
-        soup = _BeautifulSoup(page_html, "html.parser")
-        gallery = soup.find("div", class_="gallery") or soup
-        for tag in gallery.find_all(True):
-            for attr in ("src", "data-src", "data-full-image", "href"):
-                val = tag.get(attr, "")
-                if _is_croquis_content_url(val):
-                    raw_urls.add(val)
-            for part in tag.get("srcset", "").split(","):
-                tokens = part.strip().split()
-                if tokens and _is_croquis_content_url(tokens[0]):
-                    raw_urls.add(tokens[0])
-    else:
-        # Fallback: regex scan + exclude obvious site-chrome filenames
-        for m in re.finditer(
-            r'https://cdn\.croquis\.cafe[^\s"\'>]+\.(?:jpg|jpeg|png|webp)', page_html
-        ):
-            url = m.group(0)
-            if _is_croquis_content_url(url):
-                raw_urls.add(url)
-
-    # Group size-suffixed variants by their base image
-    size_re = re.compile(r'-(\d+)x(\d+)(\.[^.]+)$')
-    groups: Dict[str, Dict[str, Tuple[int, int]]] = {}  # base -> {sized_url: (w, h)}
-    for url in raw_urls:
-        m = size_re.search(url)
-        if not m:
-            continue  # skip originals (no suffix)
-        w, h = int(m.group(1)), int(m.group(2))
-        base = size_re.sub(r'\3', url)  # strip -WxH
-        groups.setdefault(base, {})[url] = (w, h)
-
-    return [_pick_best_croquis_url(variants) for variants in groups.values()]
+    # Keep only Fine Arts Photos (poses/figure drawing); excludes landscapes, still life, etc.
+    items = [item for item in items if CROQUIS_FINE_ARTS_CAT_ID in item.get("croq_image_cats", [])]
+    urls = [_croquis_best_size_url(item) for item in items]
+    return [u for u in urls if u]
 
 
 def download_croquis_image(
@@ -1084,12 +1061,17 @@ def download_croquis_image(
         print(f"[Croquis] Download failed {filename}: {e}")
         return None
 
+    # Derive HQ URL by stripping the size suffix (e.g. -1024x684) before the extension.
+    # Stored server-side only (_hq_cdn_url) for on-demand fetch; never sent to the client.
+    hq_cdn_url = re.sub(r'-\d+x\d+(?=\.[^.]+$)', '', url)
+
     # Clean display name: strip size suffix from stem
     name = re.sub(r'-\d+x\d+$', '', dest.stem)
     return {
         'id': f"croquis:{filename}",
         'name': name,
         'image_path': f"/api/remote-image/{session_id}/{urllib.parse.quote(filename)}",
+        '_hq_cdn_url': hq_cdn_url if hq_cdn_url != url else None,
         'thumbnail_path': None,
         'tags': [],
         'folder': None,
@@ -1164,8 +1146,8 @@ def fetch_croquis_photos_initial(
     count: int, session_id: str, session_dir: Path
 ) -> List[dict]:
     """
-    Scrape random model pages to build a URL pool, download an initial batch
-    synchronously, then hand the rest to a background thread.
+    Use the WP REST API to build a URL pool from random models,
+    download an initial batch synchronously, then hand the rest to a background thread.
     """
     opener = get_croquis_opener()
     if opener is None:
@@ -1173,32 +1155,27 @@ def fetch_croquis_photos_initial(
             "Croquis cookies not configured. Add 'croquis_cookies' to config.json."
         )
 
-    n_models = max(3, (count // 15) + 2)
-    chosen = random.sample(CROQUIS_MODELS, min(n_models, len(CROQUIS_MODELS)))
-    print(f"[Croquis] Scraping {len(chosen)} models: {chosen}")
+    def _build_pool() -> List[str]:
+        all_models = _get_croquis_models_cached(opener)
+        if not all_models:
+            return []
+        n_models = max(3, (count // 15) + 2)
+        chosen = random.sample(all_models, min(n_models, len(all_models)))
+        print(f"[Croquis] Fetching from {len(chosen)} models via REST API: {[m['slug'] for m in chosen]}")
+        urls: List[str] = []
+        with ThreadPoolExecutor(max_workers=len(chosen)) as ex:
+            for batch in ex.map(lambda m: fetch_croquis_model_urls(m, opener), chosen):
+                urls.extend(batch)
+        return urls
 
-    # Scrape all models in parallel, staggered by 0.5s to avoid a burst
-    def _scrape_staggered(args: tuple) -> List[str]:
-        idx, slug = args
-        if idx > 0:
-            time.sleep(idx * 0.5)
-        return scrape_croquis_model_urls(slug, opener)
-
-    def _scrape_pool() -> List[str]:
-        scraped: List[str] = []
-        with ThreadPoolExecutor(max_workers=len(chosen)) as scrape_ex:
-            for urls in scrape_ex.map(_scrape_staggered, enumerate(chosen)):
-                scraped.extend(urls)
-        return scraped
-
-    pool = _scrape_pool()
+    pool = _build_pool()
 
     if not pool and croquis_auto_login_available():
-        print("[Croquis] No content URLs found; attempting automatic cookie refresh")
+        print("[Croquis] No images from REST API; attempting automatic cookie refresh")
         refreshed_opener = refresh_croquis_cookies()
         if refreshed_opener is not None:
             opener = refreshed_opener
-            pool = _scrape_pool()
+            pool = _build_pool()
 
     if not pool:
         if croquis_auto_login_available():
@@ -1213,7 +1190,7 @@ def fetch_croquis_photos_initial(
     pool = pool[: count * 2]  # cap pool; plenty of variety
     print(f"[Croquis] Pool: {len(pool)} URLs, targeting {count}")
 
-    min_initial = min(3, count)
+    min_initial = min(1, count)
     images: List[dict] = []
 
     # Register session early so the background thread can find it
@@ -1276,6 +1253,231 @@ def fetch_croquis_photos_initial(
     return images
 
 
+def _public_image_fields(images: List[dict]) -> List[dict]:
+    """Strip server-internal fields (prefixed with _) before sending image lists to the client."""
+    return [{k: v for k, v in img.items() if not k.startswith('_')} for img in images]
+
+
+# ---------------------------------------------------------------------------
+# Pack cache — built once at startup in a background thread
+# ---------------------------------------------------------------------------
+
+def _weighted_sample_without_replacement(population: List, weights: List[float], k: int) -> List:
+    """Weighted random sample of k distinct items without replacement."""
+    population = list(population)
+    weights = list(weights)
+    result = []
+    for _ in range(min(k, len(population))):
+        total = sum(weights)
+        if total <= 0:
+            break
+        r = random.uniform(0, total)
+        cumulative = 0.0
+        chosen_idx = len(population) - 1
+        for idx, w in enumerate(weights):
+            cumulative += w
+            if r <= cumulative:
+                chosen_idx = idx
+                break
+        result.append(population[chosen_idx])
+        population.pop(chosen_idx)
+        weights.pop(chosen_idx)
+    return result
+
+
+class PackCache:
+    """Pre-built index of Eagle pack -> image list with √-weighted sampling support."""
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._ready = False
+        self._pack_images: Dict[str, List[dict]] = {}
+        self._pack_names: Dict[str, str] = {}
+
+    def is_ready(self) -> bool:
+        with self._lock:
+            return self._ready
+
+    def build(self):
+        """Scan the full library and populate the pack index. Called once from a background thread."""
+        print("[PackCache] Starting build...")
+        start = time.time()
+        try:
+            # Load folder names and build child→root mapping from library metadata
+            pack_names: Dict[str, str] = {}
+            child_to_root: Dict[str, str] = {}  # maps any descendant folder ID to its top-level ancestor ID
+            lib_meta_file = LIBRARY_PATH / "metadata.json"
+            if lib_meta_file.exists():
+                try:
+                    with open(lib_meta_file, 'r', encoding='utf-8') as f:
+                        lib_meta = json.load(f)
+
+                    def _walk(folders, root_id=None):
+                        for folder in folders:
+                            fid = folder.get('id')
+                            if not fid:
+                                continue
+                            pack_names[fid] = folder.get('name', '')
+                            effective_root = root_id or fid  # top-level folders are their own root
+                            child_to_root[fid] = effective_root
+                            _walk(folder.get('children', []), effective_root)
+
+                    _walk(lib_meta.get('folders', []))
+                except Exception as e:
+                    print(f"[PackCache] Warning: could not read library metadata: {e}")
+
+            # Walk all image directories
+            pack_images: Dict[str, List[dict]] = {}
+            if not IMAGES_DIR.exists():
+                raise FileNotFoundError(f"Images dir not found: {IMAGES_DIR}")
+
+            for img_dir in IMAGES_DIR.iterdir():
+                if not img_dir.is_dir():
+                    continue
+                md_file = img_dir / "metadata.json"
+                if not md_file.exists():
+                    continue
+                try:
+                    with open(md_file, 'r', encoding='utf-8') as f:
+                        metadata = json.load(f)
+                except Exception:
+                    continue
+
+                if metadata.get('isDeleted', False):
+                    continue
+                tags = metadata.get('tags', [])
+                if 'ignore' in tags:
+                    continue
+
+                image_files = [
+                    f for f in img_dir.iterdir()
+                    if f.is_file()
+                    and not f.name.endswith('_thumbnail.png')
+                    and f.name != 'metadata.json'
+                    and f.suffix.lower() in ('.jpg', '.jpeg', '.png', '.gif', '.webp')
+                ]
+                if not image_files:
+                    continue
+
+                image_file = image_files[0]
+                thumbnail_files = [
+                    f for f in img_dir.iterdir()
+                    if f.is_file() and f.name.endswith('_thumbnail.png')
+                ]
+                thumbnail_file = thumbnail_files[0] if thumbnail_files else None
+
+                image_dict = {
+                    'id': metadata['id'],
+                    'name': metadata.get('name', image_file.stem),
+                    'image_path': f"/api/image/{img_dir.name}/{urllib.parse.quote(image_file.name)}",
+                    'thumbnail_path': (
+                        f"/api/image/{img_dir.name}/{urllib.parse.quote(thumbnail_file.name)}"
+                        if thumbnail_file else None
+                    ),
+                    'tags': tags,
+                    'folder': img_dir.name,
+                }
+
+                folder_ids = metadata.get('folders', [])
+                if folder_ids:
+                    # Roll up to root pack — deduplicate in case multiple subfolders share a root
+                    root_ids = set(child_to_root.get(fid, fid) for fid in folder_ids)
+                    for rid in root_ids:
+                        pack_images.setdefault(rid, []).append(image_dict)
+                else:
+                    pack_images.setdefault('__unassigned__', []).append(image_dict)
+
+            elapsed = time.time() - start
+            total_entries = sum(len(v) for v in pack_images.values())
+            print(f"[PackCache] Ready: {len(pack_images)} packs, {total_entries} image entries in {elapsed:.1f}s")
+
+            with self._lock:
+                self._pack_names = pack_names
+                self._pack_images = pack_images
+                self._ready = True
+
+        except Exception as e:
+            print(f"[PackCache] Build failed: {e}")
+
+    @staticmethod
+    def _image_category(tags: List[str]) -> str:
+        if 'handsfeet' in tags:
+            return 'handsfeet'
+        if 'costumes' in tags:
+            return 'costumes'
+        if 'portraits' in tags:
+            return 'portraits'
+        return 'figure'
+
+    def sample(self, count: int, pack_mode: str, enabled_categories: Set[str]) -> List[dict]:
+        """
+        Sample `count` images using √-weighted pack selection.
+        pack_mode: 'all' | '1' | '3'
+        enabled_categories: set of category strings ('figure', 'handsfeet', 'costumes', 'portraits')
+        """
+        with self._lock:
+            pack_images_snapshot = dict(self._pack_images)
+
+        # Filter each pack's images to matching categories first
+        filtered: Dict[str, List[dict]] = {}
+        for pack_id, images in pack_images_snapshot.items():
+            pool = [img for img in images if self._image_category(img['tags']) in enabled_categories]
+            if pool:
+                filtered[pack_id] = pool
+
+        if not filtered:
+            return []
+
+        pack_ids = list(filtered.keys())
+        weights = [math.sqrt(len(filtered[pid])) for pid in pack_ids]
+
+        selected_images: List[dict] = []
+        seen_image_ids: Set[str] = set()
+
+        if pack_mode == 'all':
+            # Weighted sampling with replacement on packs, one image per draw
+            attempts = 0
+            max_attempts = count * 6
+            while len(selected_images) < count and attempts < max_attempts:
+                attempts += 1
+                drawn_pack = random.choices(pack_ids, weights=weights, k=1)[0]
+                img = random.choice(filtered[drawn_pack])
+                if img['id'] not in seen_image_ids:
+                    selected_images.append(img)
+                    seen_image_ids.add(img['id'])
+            # Top-up from remaining images if library is very small
+            if len(selected_images) < count:
+                remaining = [img for imgs in filtered.values() for img in imgs if img['id'] not in seen_image_ids]
+                random.shuffle(remaining)
+                selected_images.extend(remaining[:count - len(selected_images)])
+
+        else:
+            n_packs = int(pack_mode)
+            n_packs = min(n_packs, len(pack_ids))
+            chosen_packs = _weighted_sample_without_replacement(pack_ids, weights, n_packs)
+            quota_base = count // n_packs
+            remainder = count % n_packs
+            for i, pack_id in enumerate(chosen_packs):
+                quota = quota_base + (1 if i < remainder else 0)
+                pool = filtered[pack_id]
+                drawn = random.sample(pool, min(quota, len(pool)))
+                for img in drawn:
+                    if img['id'] not in seen_image_ids:
+                        selected_images.append(img)
+                        seen_image_ids.add(img['id'])
+            # Top-up if small packs couldn't fill their quota
+            if len(selected_images) < count:
+                remaining = [img for imgs in filtered.values() for img in imgs if img['id'] not in seen_image_ids]
+                random.shuffle(remaining)
+                selected_images.extend(remaining[:count - len(selected_images)])
+
+        random.shuffle(selected_images)
+        return selected_images
+
+
+PACK_CACHE = PackCache()
+
+
 class FigureStudyHandler(http.server.SimpleHTTPRequestHandler):
     """HTTP request handler for Stop Noodling"""
     
@@ -1302,6 +1504,12 @@ class FigureStudyHandler(http.server.SimpleHTTPRequestHandler):
         elif parsed_path.path.startswith('/api/remote-image/'):
             # Serve a cached remote image file
             self.serve_remote_image(parsed_path.path)
+        elif parsed_path.path.startswith('/api/croquis-hq/'):
+            # On-demand HQ fetch for a Croquis image
+            session_id = parsed_path.path.split('/')[-1]
+            params = urllib.parse.parse_qs(parsed_path.query)
+            image_id = params.get('id', [''])[0]
+            self.fetch_croquis_hq_image(session_id, image_id)
         else:
             self.send_error(404, "Not Found")
     
@@ -1330,129 +1538,102 @@ class FigureStudyHandler(http.server.SimpleHTTPRequestHandler):
     def create_session(self, query_string: str):
         """Create a new study session with random images"""
         start_time = time.time()
-        
+
         # Parse query parameters
         params = urllib.parse.parse_qs(query_string)
         count = int(params.get('count', ['20'])[0])
         enabled_tags_param = params.get('enabled_tags', ['figure,handsfeet,costumes,portraits'])[0]
         enabled_tags = set(t.strip() for t in enabled_tags_param.split(',') if t.strip())
-        
-        print(f"\n[Session Request] enabled_tags={enabled_tags}, count={count}")
-        
+        pack_mode_raw = params.get('packs', ['all'])[0]
+        pack_mode = pack_mode_raw if pack_mode_raw in ('1', '3', 'all') else 'all'
+
+        print(f"\n[Session Request] enabled_tags={enabled_tags}, count={count}, packs={pack_mode}")
+
         try:
-            # Get all image folder names (fast - just listing directories)
             if not IMAGES_DIR.exists():
                 self.send_json_error(500, f"Library not found at {IMAGES_DIR}")
                 return
-            
-            all_folders = [d for d in IMAGES_DIR.iterdir() if d.is_dir()]
-            
-            if len(all_folders) == 0:
-                self.send_json_error(500, "No images found in library")
-                return
-            
-            print(f"[Filtering] Scanning {len(all_folders)} folders...")
-            
-            # Randomly sample folders, filtering out deleted ones, until we have enough
-            images = []
-            available_folders = all_folders.copy()
-            random.shuffle(available_folders)
-            
-            folders_checked = 0
-            
-            # Read metadata only for selected folders
-            for folder in available_folders:
-                if len(images) >= count:
-                    break
-                
-                folders_checked += 1
-                    
-                metadata_file = folder / "metadata.json"
-                if not metadata_file.exists():
-                    continue
-                
-                try:
-                    with open(metadata_file, 'r', encoding='utf-8') as f:
-                        metadata = json.load(f)
-                    
-                    # Skip deleted images
-                    if metadata.get('isDeleted', False):
-                        continue
-                    
-                    # Filter by practice type
-                    image_tags = metadata.get('tags', [])
-                    
-                    # Skip ignored images
-                    if 'ignore' in image_tags:
-                        continue
-                    
-                    # Determine image category based on tags
-                    if 'handsfeet' in image_tags:
-                        image_category = 'handsfeet'
-                    elif 'costumes' in image_tags:
-                        image_category = 'costumes'
-                    elif 'portraits' in image_tags:
-                        image_category = 'portraits'
-                    else:
-                        image_category = 'figure'
-                    
-                    if image_category not in enabled_tags:
-                        continue
-                    
-                    # Find the actual image file (not thumbnail, not metadata.json)
-                    image_files = [
-                        f for f in folder.iterdir()
-                        if f.is_file() 
-                        and not f.name.endswith('_thumbnail.png')
-                        and f.name != 'metadata.json'
-                        and f.suffix.lower() in ['.jpg', '.jpeg', '.png', '.gif', '.webp']
-                    ]
-                    
-                    if image_files:
-                        image_file = image_files[0]
-                        
-                        # Find the actual thumbnail file (Eagle may not create one for all images)
-                        thumbnail_files = [
-                            f for f in folder.iterdir()
-                            if f.is_file() and f.name.endswith('_thumbnail.png')
-                        ]
-                        thumbnail_file = thumbnail_files[0] if thumbnail_files else None
-                        
-                        # Use URL encoding for the actual filenames
-                        images.append({
-                            'id': metadata['id'],
-                            'name': metadata.get('name', image_file.stem),
-                            'image_path': f"/api/image/{folder.name}/{urllib.parse.quote(image_file.name)}",
-                            'thumbnail_path': f"/api/image/{folder.name}/{urllib.parse.quote(thumbnail_file.name)}" if thumbnail_file else None,
-                            'tags': metadata.get('tags', []),
-                            'folder': folder.name
-                        })
-                except (json.JSONDecodeError, KeyError) as e:
-                    print(f"Error reading metadata for {folder.name}: {e}")
-                    continue
-            
-            # Shuffle the final list
-            random.shuffle(images)
-            
-            elapsed_time = time.time() - start_time
-            
-            if len(images) < count:
-                print(f"[Warning] Only found {len(images)} images (requested {count}) after checking all {folders_checked} folders in {elapsed_time:.3f}s")
+
+            # Use the pre-built pack cache when ready (√-weighted, category-filtered)
+            if PACK_CACHE.is_ready():
+                images = PACK_CACHE.sample(count, pack_mode, enabled_tags)
+                elapsed_time = time.time() - start_time
+                print(f"[Performance] PackCache returned {len(images)} images in {elapsed_time:.3f}s (packs={pack_mode})")
             else:
-                print(f"[Performance] Found {len(images)} images after checking {folders_checked} folders in {elapsed_time:.3f}s")
-            
-            # Return warning in response if we couldn't fulfill the request
+                # Cache still warming — fall back to legacy per-image shuffle
+                print("[PackCache] Not ready yet, falling back to legacy scan")
+                all_folders = [d for d in IMAGES_DIR.iterdir() if d.is_dir()]
+                if not all_folders:
+                    self.send_json_error(500, "No images found in library")
+                    return
+
+                images = []
+                available_folders = all_folders.copy()
+                random.shuffle(available_folders)
+                folders_checked = 0
+
+                for folder in available_folders:
+                    if len(images) >= count:
+                        break
+                    folders_checked += 1
+                    metadata_file = folder / "metadata.json"
+                    if not metadata_file.exists():
+                        continue
+                    try:
+                        with open(metadata_file, 'r', encoding='utf-8') as f:
+                            metadata = json.load(f)
+                        if metadata.get('isDeleted', False):
+                            continue
+                        image_tags = metadata.get('tags', [])
+                        if 'ignore' in image_tags:
+                            continue
+                        if 'handsfeet' in image_tags:
+                            image_category = 'handsfeet'
+                        elif 'costumes' in image_tags:
+                            image_category = 'costumes'
+                        elif 'portraits' in image_tags:
+                            image_category = 'portraits'
+                        else:
+                            image_category = 'figure'
+                        if image_category not in enabled_tags:
+                            continue
+                        image_files = [
+                            f for f in folder.iterdir()
+                            if f.is_file()
+                            and not f.name.endswith('_thumbnail.png')
+                            and f.name != 'metadata.json'
+                            and f.suffix.lower() in ('.jpg', '.jpeg', '.png', '.gif', '.webp')
+                        ]
+                        if image_files:
+                            image_file = image_files[0]
+                            thumbnail_files = [f for f in folder.iterdir() if f.is_file() and f.name.endswith('_thumbnail.png')]
+                            thumbnail_file = thumbnail_files[0] if thumbnail_files else None
+                            images.append({
+                                'id': metadata['id'],
+                                'name': metadata.get('name', image_file.stem),
+                                'image_path': f"/api/image/{folder.name}/{urllib.parse.quote(image_file.name)}",
+                                'thumbnail_path': f"/api/image/{folder.name}/{urllib.parse.quote(thumbnail_file.name)}" if thumbnail_file else None,
+                                'tags': image_tags,
+                                'folder': folder.name,
+                            })
+                    except (json.JSONDecodeError, KeyError) as e:
+                        print(f"Error reading metadata for {folder.name}: {e}")
+                        continue
+
+                random.shuffle(images)
+                elapsed_time = time.time() - start_time
+                print(f"[Performance] Legacy scan: {len(images)} images from {folders_checked} folders in {elapsed_time:.3f}s")
+
             response = {
                 'success': True,
                 'images': images,
-                'total': len(images)
+                'total': len(images),
             }
-            
             if len(images) < count:
-                response['warning'] = f'Only found {len(images)} images matching "{practice_type}" practice type (you requested {count})'
-            
+                response['warning'] = f'Only found {len(images)} images matching the selected filters (requested {count})'
+
             self.send_json_response(response)
-            
+
         except Exception as e:
             self.send_json_error(500, f"Error creating session: {str(e)}")
 
@@ -1486,7 +1667,7 @@ class FigureStudyHandler(http.server.SimpleHTTPRequestHandler):
                 print(f"[Performance] Croquis returned {len(images)} initial images in {elapsed_time:.3f}s")
                 self.send_json_response({
                     'success': True,
-                    'images': images,
+                    'images': _public_image_fields(images),
                     'total': len(images),
                     'source': 'croquis',
                     'session_id': session_id,
@@ -1573,11 +1754,11 @@ class FigureStudyHandler(http.server.SimpleHTTPRequestHandler):
                 self.send_json_error(404, "Session not found")
                 return
             
-            images = list(session['images'])  # Copy
+            images = _public_image_fields(session['images'])
             fetching = session['fetching']
 
         touch_remote_cache_session(session_id)
-        
+
         response = {
             'success': True,
             'images': images,
@@ -1586,7 +1767,63 @@ class FigureStudyHandler(http.server.SimpleHTTPRequestHandler):
         }
         
         self.send_json_response(response)
-    
+
+    def fetch_croquis_hq_image(self, session_id: str, image_id: str):
+        """On-demand: download (and cache) the HQ version of a Croquis session image."""
+        if not session_id or not image_id:
+            self.send_json_error(400, "Missing session_id or image id")
+            return
+
+        with REMOTE_SESSIONS_LOCK:
+            session = REMOTE_SESSIONS.get(session_id)
+            if not session:
+                self.send_json_error(404, "Session not found or already cleaned up")
+                return
+            target = next((img for img in session['images'] if img.get('id') == image_id), None)
+            if not target:
+                self.send_json_error(404, "Image not found in session")
+                return
+            # Already cached from a previous request — return immediately
+            if target.get('hq_path'):
+                self.send_json_response({'success': True, 'hq_path': target['hq_path']})
+                return
+            hq_cdn_url = target.get('_hq_cdn_url')
+
+        if not hq_cdn_url:
+            self.send_json_error(400, "No HQ version available for this image")
+            return
+
+        opener = get_croquis_opener()
+        if not opener:
+            self.send_json_error(503, "Croquis not configured or session expired")
+            return
+
+        session_dir = REMOTE_CACHE_DIR / session_id
+        hq_filename = hq_cdn_url.split('/')[-1]
+        hq_dest = session_dir / hq_filename
+
+        try:
+            with opener.open(urllib.request.Request(hq_cdn_url), timeout=60) as resp:
+                if resp.status != 200:
+                    self.send_json_error(502, f"CDN returned HTTP {resp.status}")
+                    return
+                hq_dest.write_bytes(resp.read())
+        except Exception as e:
+            self.send_json_error(502, f"HQ download failed: {e}")
+            return
+
+        hq_path = f"/api/remote-image/{session_id}/{urllib.parse.quote(hq_filename)}"
+        with REMOTE_SESSIONS_LOCK:
+            if session_id in REMOTE_SESSIONS:
+                for img in REMOTE_SESSIONS[session_id]['images']:
+                    if img.get('id') == image_id:
+                        img['hq_path'] = hq_path
+                        break
+
+        touch_remote_cache_session(session_id)
+        print(f"[Croquis HQ] Fetched on demand: {hq_filename}")
+        self.send_json_response({'success': True, 'hq_path': hq_path})
+
     def serve_image(self, path: str):
         """Serve an image file from the library"""
         # Extract folder and filename from path
@@ -2004,6 +2241,9 @@ def main():
     print(f"Library: {LIBRARY_PATH}")
     print(f"Port: {PORT}")
     print(f"\nStarting server...")
+
+    # Start pack cache build in background (√-weighted sampling)
+    threading.Thread(target=PACK_CACHE.build, daemon=True).start()
 
     # Start remote cache safety-net cleanup
     try:

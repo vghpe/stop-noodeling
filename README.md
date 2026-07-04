@@ -155,7 +155,19 @@ Access via: `http://[local-ip]:8081`
 
 ## Development
 
-Server is a simple Python HTTP server with three main endpoints. All image serving happens through the `/images/` route which reads directly from the Eagle library.
+Run the server with `python3 server.py`. That file is a thin entry point; the implementation lives in the `stopnoodling/` package:
+
+| Module | Responsibility |
+|--------|----------------|
+| `config.py` | Configuration loading and derived paths/constants |
+| `eagle.py` | Eagle library metadata helpers (IDs, thumbnails, folders) |
+| `library.py` | Local library index (`PackCache`) with √-weighted sampling |
+| `remote_cache.py` | Remote session registry and on-disk cache cleanup |
+| `providers/` | Remote image sources (Unsplash, Wikimedia, Croquis) |
+| `handlers.py` | HTTP request handler |
+| `app.py` | Server startup / `main()` |
+
+Image serving reads directly from the Eagle library via the `/api/image/` route. No build step is required.
 
 The web app is a single-page application in `index.html` - no build process needed.
 

@@ -17,6 +17,7 @@ __pycache__/
 *.so
 .Python
 venv/
+.venv/
 ENV/
 
 # Don't commit the actual Eagle library

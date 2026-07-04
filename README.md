@@ -58,12 +58,14 @@ Optional (recommended for Wikimedia imports):
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/` | GET | Serves the web app |
-| `/api/session` | GET | Get random images for session. Params: `count` (number of images) |
-| `/api/remote-session` | GET | Get random Wikimedia photos. Params: `count`, `source=wikimedia` |
-| `/api/favorite` | POST | Toggle favorite tag. Body: `{"folder": "image-folder-id"}` |
-| `/images/<path>` | GET | Serve image files from library |
-| `/api/remote-image/<path>` | GET | Serve cached Wikimedia images |
-| `/api/remote-session/cleanup` | POST | Delete cached Wikimedia images. Body: `{"session_id": "..."}` |
+| `/api/session` | GET | Get random library images. Params: `count`, `enabled_tags` (comma list), `packs` (`1`, `3`, or `all`) |
+| `/api/remote-session` | GET | Start a remote session. Params: `count`, `source` (`wikimedia`, `unsplash`, or `croquis`), `query` |
+| `/api/remote-session/<session_id>` | GET | Poll a remote session for additional images |
+| `/api/favorite` | POST | Toggle favorite tag. Body: `{"folder": "image-folder-id"}` (local) or `{"is_remote": true, "session_id": "...", "image_data": {...}}` |
+| `/api/image/<folder>/<file>` | GET | Serve image files from the Eagle library |
+| `/api/remote-image/<session_id>/<file>` | GET | Serve cached remote images |
+| `/api/croquis-hq/<session_id>?id=<image_id>` | GET | Fetch and cache the HQ version of a Croquis image |
+| `/api/remote-session/cleanup` | POST | Delete a session's cached remote images. Body: `{"session_id": "..."}` |
 
 ## Eagle Integration
 

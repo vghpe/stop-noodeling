@@ -5,7 +5,6 @@ Serves the web interface and provides API endpoints for the Eagle library
 """
 
 import http.server
-import socketserver
 import json
 import math
 import os
@@ -237,8 +236,18 @@ def ensure_remote_cache_dir():
     REMOTE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 
+SESSION_ID_RE = re.compile(r'^[0-9a-f]{32}$')
+
+
+def is_valid_session_id(session_id) -> bool:
+    """Session IDs are always uuid4().hex; reject anything else before it reaches the filesystem."""
+    return isinstance(session_id, str) and bool(SESSION_ID_RE.match(session_id))
+
+
 def touch_remote_cache_session(session_id: str):
     """Best-effort: update the session directory mtime so TTL cleanup keeps it."""
+    if not is_valid_session_id(session_id):
+        return
     try:
         session_dir = REMOTE_CACHE_DIR / session_id
         if session_dir.exists():
@@ -266,8 +275,10 @@ def cleanup_remote_session(session_id: str):
         session_info = REMOTE_SESSIONS.pop(session_id, None)
     if session_info and session_info.get('path'):
         session_dir = Path(session_info['path'])
-    else:
+    elif is_valid_session_id(session_id):
         session_dir = REMOTE_CACHE_DIR / session_id
+    else:
+        return
 
     if session_dir.exists():
         shutil.rmtree(session_dir, ignore_errors=True)
@@ -1541,7 +1552,11 @@ class FigureStudyHandler(http.server.SimpleHTTPRequestHandler):
 
         # Parse query parameters
         params = urllib.parse.parse_qs(query_string)
-        count = int(params.get('count', ['20'])[0])
+        try:
+            count = int(params.get('count', ['20'])[0])
+        except ValueError:
+            count = 20
+        count = max(1, min(count, 500))
         enabled_tags_param = params.get('enabled_tags', ['figure,handsfeet,costumes,portraits'])[0]
         enabled_tags = set(t.strip() for t in enabled_tags_param.split(',') if t.strip())
         pack_mode_raw = params.get('packs', ['all'])[0]
@@ -1642,7 +1657,12 @@ class FigureStudyHandler(http.server.SimpleHTTPRequestHandler):
         start_time = time.time()
 
         params = urllib.parse.parse_qs(query_string)
-        count = int(params.get('count', ['20'])[0])
+        try:
+            count = int(params.get('count', ['20'])[0])
+        except ValueError:
+            count = 20
+        # Remote sessions download files; keep the cap conservative
+        count = max(1, min(count, 100))
         source = params.get('source', ['wikimedia'])[0]
         query = params.get('query', [''])[0]
 
@@ -1770,7 +1790,7 @@ class FigureStudyHandler(http.server.SimpleHTTPRequestHandler):
 
     def fetch_croquis_hq_image(self, session_id: str, image_id: str):
         """On-demand: download (and cache) the HQ version of a Croquis session image."""
-        if not session_id or not image_id:
+        if not is_valid_session_id(session_id) or not image_id:
             self.send_json_error(400, "Missing session_id or image id")
             return
 
@@ -1838,10 +1858,18 @@ class FigureStudyHandler(http.server.SimpleHTTPRequestHandler):
         
         # URL decode the filename
         filename = urllib.parse.unquote(filename)
-        
+
         image_path = IMAGES_DIR / folder_name / filename
-        
-        if not image_path.exists() or not image_path.is_file():
+
+        # Refuse anything that resolves outside the library (path traversal)
+        try:
+            image_path = image_path.resolve()
+            image_path.relative_to(IMAGES_DIR.resolve())
+        except (OSError, ValueError):
+            self.send_error(404, "Image not found")
+            return
+
+        if not image_path.is_file():
             self.send_error(404, "Image not found")
             return
         
@@ -1881,16 +1909,24 @@ class FigureStudyHandler(http.server.SimpleHTTPRequestHandler):
         filename = '/'.join(parts[4:])
         filename = urllib.parse.unquote(filename)
 
+        if not is_valid_session_id(session_id):
+            self.send_error(404, "Image not found")
+            return
+
         touch_remote_cache_session(session_id)
 
         session_dir = REMOTE_CACHE_DIR / session_id
         image_path = session_dir / filename
 
+        # Refuse anything that resolves outside the session cache dir (path traversal)
         try:
-            if not image_path.resolve().is_file() or not str(image_path.resolve()).startswith(str(session_dir.resolve())):
-                self.send_error(404, "Image not found")
-                return
-        except FileNotFoundError:
+            image_path = image_path.resolve()
+            image_path.relative_to(session_dir.resolve())
+        except (OSError, ValueError):
+            self.send_error(404, "Image not found")
+            return
+
+        if not image_path.is_file():
             self.send_error(404, "Image not found")
             return
 
@@ -1933,9 +1969,13 @@ class FigureStudyHandler(http.server.SimpleHTTPRequestHandler):
                 # Favoriting a remote image - copy it to Eagle library
                 session_id = data.get('session_id')
                 remote_source = str(image_data.get('source', 'wikimedia')).lower()
-                if remote_source in ('wikimedia', 'croquis') and not session_id:
-                    self.send_json_error(400, f"Missing session_id for {remote_source} image. Session may have been cleared.")
-                    return
+                if remote_source in ('wikimedia', 'croquis'):
+                    if not session_id:
+                        self.send_json_error(400, f"Missing session_id for {remote_source} image. Session may have been cleared.")
+                        return
+                    if not is_valid_session_id(session_id):
+                        self.send_json_error(400, "Invalid session_id")
+                        return
                 
                 # Ensure Eagle images directory exists
                 if not IMAGES_DIR.exists():
@@ -2019,6 +2059,10 @@ class FigureStudyHandler(http.server.SimpleHTTPRequestHandler):
                         self.send_json_error(400, "Missing Unsplash image URL")
                         return
                     parsed = urllib.parse.urlparse(image_url)
+                    # Only fetch from Unsplash's CDN — the URL comes from the client
+                    if parsed.scheme != 'https' or parsed.hostname not in ('images.unsplash.com', 'plus.unsplash.com'):
+                        self.send_json_error(400, "Invalid Unsplash image URL")
+                        return
                     source_suffix = Path(parsed.path).suffix.lower() or '.jpg'
                 else:
                     self.send_json_error(400, f"Unsupported remote source: {remote_source}")
@@ -2042,6 +2086,10 @@ class FigureStudyHandler(http.server.SimpleHTTPRequestHandler):
                         return
 
                     download_location = str(image_data.get('download_location') or '').strip()
+                    # Never send the API key anywhere but Unsplash's own API
+                    dl_parsed = urllib.parse.urlparse(download_location) if download_location else None
+                    if dl_parsed and (dl_parsed.scheme != 'https' or dl_parsed.hostname != 'api.unsplash.com'):
+                        download_location = ''
                     if download_location:
                         try:
                             ack_req = urllib.request.Request(
@@ -2138,8 +2186,13 @@ class FigureStudyHandler(http.server.SimpleHTTPRequestHandler):
                 
             elif folder_name:
                 # Local Eagle library image - just toggle tag
+                # Folder must be a plain directory name inside the library (no path separators / traversal)
+                if Path(folder_name).name != folder_name:
+                    self.send_json_error(400, "Invalid folder name")
+                    return
+
                 metadata_file = IMAGES_DIR / folder_name / "metadata.json"
-                
+
                 if not metadata_file.exists():
                     self.send_json_error(404, "Metadata file not found")
                     return
@@ -2187,6 +2240,9 @@ class FigureStudyHandler(http.server.SimpleHTTPRequestHandler):
             session_id = data.get('session_id')
             if not session_id:
                 self.send_json_error(400, "Missing session_id parameter")
+                return
+            if not is_valid_session_id(session_id):
+                self.send_json_error(400, "Invalid session_id")
                 return
 
             cleanup_remote_session(session_id)
@@ -2255,8 +2311,10 @@ def main():
     except Exception as e:
         print(f"Warning: could not start remote cache reaper: {e}")
     
-    socketserver.TCPServer.allow_reuse_address = True
-    with socketserver.TCPServer(("", PORT), FigureStudyHandler) as httpd:
+    # Threading server: a slow remote fetch (e.g. Croquis HQ download) must not
+    # block image serving for the session in progress.
+    http.server.ThreadingHTTPServer.allow_reuse_address = True
+    with http.server.ThreadingHTTPServer(("", PORT), FigureStudyHandler) as httpd:
         hostname = socket.gethostname()
         local_ip = socket.gethostbyname(hostname)
         
